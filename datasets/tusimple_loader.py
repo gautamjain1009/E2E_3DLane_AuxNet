@@ -4,6 +4,7 @@ Tu simple dataloader for 2d lane segmentation. Inspired by: https://github.com/T
 Author : Gautam Kumar jain (gautamjain1009@gmail.com)
 Date: March 2022
 """
+from sqlite3 import converters
 import torch 
 import cv2
 import logging 
@@ -14,6 +15,8 @@ import random
 import os 
 import json
 
+from registery import DATASETS
+
 #dataset split for tusimple already defined by the authors
 SPLIT_FILES = {
     'trainval': ['label_data_0313.json', 'label_data_0601.json', 'label_data_0531.json'],
@@ -22,10 +25,11 @@ SPLIT_FILES = {
     'test': ['test_label.json'],
 }
 
+@DATASETS.register_module()
 class TusimpleLoader(Dataset):
     def __init__(self, data_root, split, cfg = None):
         super(TusimpleLoader).__init__()
-        
+
         self.data_root = data_root 
         self.split = split
         self.annotated_files = SPLIT_FILES[self.split]
@@ -37,12 +41,11 @@ class TusimpleLoader(Dataset):
         n_lanes = 0
         self.data = []
         self.logger.info("Loading tu simple dataset")
+        
         for file in self.annotated_files:
             annotated_file_path = os.path.join(self.data_root, file)
-            # print(annotated_file_path)
+
             with open(annotated_file_path, 'r') as datasource:
-                # print("I am in this loop")
-                # print(annotated_file_path)
                 lines = datasource.readlines()
                 for line in lines:
                     datasource = json.loads(line)
@@ -58,22 +61,21 @@ class TusimpleLoader(Dataset):
                     'mask_path': os.path.join(self.data_root, mask_path),
                     'lanes': lanes,
                     })
-                    
-                    
+        
         if self.split == 'train':
             random.shuffle(self.data)
-        print(self.data[0])
+
     def __len__(self):
         return len(self.data)
 
     
     def __getitem__(self, index):
-        lane_data = self.data[index]
-        if not os.path.isfile(lane_data['img_path']):
-            raise FileNotFoundError('cannot find file: {}'.format(lane_data['img_path']))
+        batch = self.data[index]
+        if not os.path.isfile(batch['img_path']):
+            raise FileNotFoundError('cannot find file: {}'.format(batch['img_path']))
         
-        img = cv2.imread(lane_data['img_path'])
-        batch = lane_data.copy()
+        img = cv2.imread(batch['img_path'])
+        
         ## TODO:resizing if necessary
         batch.update({'img':img})
 
@@ -82,7 +84,11 @@ class TusimpleLoader(Dataset):
                 raise FileNotFoundError('cannot find file: {}'.format(batch['mask_path']))
             
             label = cv2.imread(batch['mask_path'],cv2.IMREAD_UNCHANGED)
-    
+            
+            if len(label.shape) >2: #reducing the channels in the segmentation mask
+                label = label[:,:,0] 
+            label = label.squeeze()
+            
             ##TODO:resizing if necessary
             batch.update({'mask': label})
 
@@ -90,16 +96,15 @@ class TusimpleLoader(Dataset):
 
         return batch
 
+# if __name__ == "__main__":
+#     #unit test
+#     ## will be added in argsparse
+#     root = "/home/gautam/e2e/lane_detection/2d_approaches/dataset/tusimple" 
+#     split = "train"
 
-if __name__ == "__main__":
-    
-    #unit test
-    root = "/home/gautam/e2e/lane_detection/2d_approaches/dataset/tusimple" 
-    split = "train"
-    TusimpleLoader(root, split)
+#     tusimple = TusimpleLoader(root, split)
+#     loader = DataLoader(tusimple, batch_size =1, num_workers=1)
 
-    tusimple = TusimpleLoader(root, split)
-    loader = DataLoader(tusimple, batch_size =1, num_workers=1)
-
-    for j in enumerate(loader):
-        print(j.keys())
+#     for j in enumerate(loader):
+#         # print(j[1]['mask'].shape)
+#         print(j[1].keys())
