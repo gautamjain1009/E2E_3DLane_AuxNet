@@ -53,21 +53,21 @@ cut_height = 160
 ori_img_h = 720
 ori_img_w = 1280
 
-size=(img_width, img_height)
-##depreciated in my implementation just for reference
-# train_process = [
-#     dict(type='RandomRotation'),
-#     dict(type='RandomHorizontalFlip'),
-#     dict(type='Resize', size=(img_width, img_height)),
-#     dict(type='Normalize', img_norm=img_norm),
-#     dict(type='ToTensor'),
-# ] 
+# size=(img_width, img_height)
+#depreciated in my implementation just for reference
+train_augmentation = [
+    dict(type='RandomRotation'),
+    dict(type='RandomHorizontalFlip'),
+    dict(type='Resize', size=(img_width, img_height)),
+    dict(type='Normalize', img_norm=img_norm),
+    dict(type='ToTensor'),
+] 
 
-# val_process = [
-#     dict(type='Resize', size=(img_width, img_height)),
-#     dict(type='Normalize', img_norm=img_norm),
-#     dict(type='ToTensor', keys=['img']),
-# ] 
+val_augmentation = [
+    dict(type='Resize', size=(img_width, img_height)),
+    dict(type='Normalize', img_norm=img_norm),
+    dict(type='ToTensor', keys=['img']),
+] 
 
 dataset_path = '/home/gautam/e2e/lane_detection/2d_approaches/dataset/tusimple'
 
@@ -76,19 +76,19 @@ dataset = dict(
         type='TusimpleLoader',
         data_root=dataset_path,
         split='trainval',
-        transform = True
+        transform = train_augmentation
     ),
     val=dict(
         type='TusimpleLoader',
         data_root=dataset_path,
         split='val',
-        transform = False
+        transform = val_augmentation
     ),
     test=dict(
         type='TusimpleLoader',
         data_root=dataset_path,
         split='test',
-        transform = True
+        transform = val_augmentation
     )
 )
 

@@ -8,6 +8,7 @@ import torch
 import numbers
 import collections
 from PIL import Image
+from .registry import AUGMENTATION
 
 def to_tensor(data):
     """Convert objects of various python types to :obj:`torch.Tensor`.
@@ -29,6 +30,7 @@ def to_tensor(data):
     else:
         raise TypeError(f'type {type(data)} cannot be converted to tensor.')
 
+@AUGMENTATION.register_module
 class ToTensor(object):
     """Convert some results to :obj:`torch.Tensor` by given keys.
     Args:
@@ -50,6 +52,7 @@ class ToTensor(object):
     def __repr__(self):
         return self.__class__.__name__ + f'(keys={self.keys})'
 
+@AUGMENTATION.register_module
 class RandomLROffsetLABEL(object):
     def __init__(self,max_offset, cfg=None):
         self.max_offset = max_offset
@@ -81,6 +84,7 @@ class RandomLROffsetLABEL(object):
         
         return sample 
 
+@AUGMENTATION.register_module
 class RandomUDoffsetLABEL(object):
     def __init__(self,max_offset, cfg=None):
         self.max_offset = max_offset
@@ -111,6 +115,7 @@ class RandomUDoffsetLABEL(object):
         sample['mask'] = label
         return sample 
 
+@AUGMENTATION.register_module
 class Resize(object):
     def __init__(self, size, cfg=None):
         
@@ -127,6 +132,7 @@ class Resize(object):
                                   interpolation=cv2.INTER_NEAREST)
         return sample
 
+@AUGMENTATION.register_module
 class RandomCrop(object):
     def __init__(self, size, cfg=None):
         if isinstance(size, numbers.Number):
@@ -149,6 +155,7 @@ class RandomCrop(object):
             out_images.append(img[h1:h2, w1:w2, ...])
         return out_images
 
+@AUGMENTATION.register_module
 class CenterCrop(object):
     def __init__(self, size, cfg=None):
         if isinstance(size, numbers.Number):
@@ -171,6 +178,7 @@ class CenterCrop(object):
             out_images.append(img[h1:h2, w1:w2, ...])
         return out_images
 
+@AUGMENTATION.register_module
 class RandomRotation(object):
     def __init__(self, degree=(-10, 10), interpolation=(cv2.INTER_LINEAR, cv2.INTER_NEAREST), padding=None, cfg=None):
         self.degree = degree
@@ -203,6 +211,7 @@ class RandomRotation(object):
             self._rotate_mask(sample, map_matrix)
         return sample
 
+@AUGMENTATION.register_module
 class RandomBlur(object):
     def __init__(self, applied, cfg=None):
         self.applied = applied
@@ -224,6 +233,7 @@ class RandomBlur(object):
         else:
             return img_group
 
+@AUGMENTATION.register_module
 class RandomHorizontalFlip(object):
     """Randomly horizontally flips the given numpy Image with a probability of 0.5
     """
@@ -238,6 +248,7 @@ class RandomHorizontalFlip(object):
             if 'mask' in sample: sample['mask'] = np.fliplr(sample['mask'])
         return sample
 
+@AUGMENTATION.register_module
 class Normalize(object):
     def __init__(self, img_norm, cfg=None):
         self.mean = np.array(img_norm['mean'], dtype=np.float32)
@@ -257,16 +268,3 @@ class Normalize(object):
         sample['img'] = img
 
         return sample 
-
-# rand = np.random.rand(720,1280,3)
-# mask = np.random.rand(720,1280)
-# lanes = [0,203,34,5,6,6,6,6]
-# sample = {}
-# sample.update({"img":rand})
-# sample.update({"mask":mask})
-# sample.update({'lanes':lanes})
-# a = ToTensor()
-# b = a(sample)
-
-# print(b['mask'].shape)
-# print(b.keys())

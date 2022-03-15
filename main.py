@@ -12,7 +12,7 @@ from datasets.registry import build_dataloader
 
 
 parser = argparse.ArgumentParser(description='2D Lane detection')
-parser.add_argument('--config', help = 'path of trian config file')
+parser.add_argument('--config', help = 'path of train config file')
 
 args = parser.parse_args()
 
@@ -25,6 +25,4 @@ cfg = Config.fromfile(args.config)
 train_loader = build_dataloader(cfg.dataset.train, cfg, is_train = True)
 
 for j in enumerate(train_loader):
-    # print(j[1]['mask'].shape)
-    # print(j[0])
     print(j[1]['mask'].shape)

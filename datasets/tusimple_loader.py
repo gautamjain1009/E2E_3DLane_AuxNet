@@ -13,8 +13,7 @@ import os
 import json
 
 import collections
-from .registry import DATASETS
-# from transforms import Resize, RandomRotation, RandomHorizontalFlip, Normalize, ToTensor
+from .registry import DATASETS, Process
 
 """
 TODO: Check if dataloading is slow implement a multithreaded loader (Enhancement)
@@ -41,8 +40,9 @@ class TusimpleLoader(Dataset):
         self.logger = logging.getLogger('Tusimple_loader')
         self.load_dataset()
         self.logger.info("Tusimple annotations loaded")
-        self.size = self.cfg.size
-        self.img_norm = self.cfg.img_norm 
+        self.process = Process(transform,self.cfg)
+        # self.size = self.cfg.size
+        # self.img_norm = self.cfg.img_norm 
         
     def load_dataset(self):
 
@@ -72,22 +72,6 @@ class TusimpleLoader(Dataset):
         
         if self.split == 'train' or 'trainval':
             random.shuffle(self.data)
-    
-    # def compose_transforms(self, batch, size, img_norm):
-    
-    #     rand_flip = RandomHorizontalFlip()
-    #     rand_rotation = RandomRotation()
-    #     rsize = Resize(size)    
-    #     norm = Normalize(img_norm)
-    #     totensor = ToTensor()
-
-    #     batch = rand_flip(batch)
-    #     batch = rand_rotation(batch)
-    #     batch = rsize(batch)
-    #     batch = norm(batch)
-    #     batch = totensor(batch)
-
-    #     return batch
 
     def __len__(self):
         return len(self.data)
@@ -102,7 +86,7 @@ class TusimpleLoader(Dataset):
         
         img = cv2.imread(sample['img_path'])
     
-        ## TODO:resizing
+        ## TODO:resizing as per cut height
         batch.update({'img':img})
 
         if self.split =="train" or "trainval":
@@ -115,7 +99,7 @@ class TusimpleLoader(Dataset):
                 label = label[:,:,0] 
             label = label.squeeze()
             
-            ##TODO:resizing
+            ##TODO:resizing as per cut height
             batch.update({'mask': label})
         
         #TODO: enable lanedata
@@ -123,15 +107,13 @@ class TusimpleLoader(Dataset):
             
         #augmentation
         if self.transform:
-            # print("I was here")
-            # batch = self.compose_transforms(batch,self.cfg.size, self.cfg.img_norm)
+            batch = self.process(batch)
             batch = batch
         else:
             batch = batch
 
-        return batch ## TODO: Change it if in case the existance is also predicted
+        return batch 
 
-# print(DATASETS)
 # if __name__ == "__main__":
     #unit test
     # will be added in config
@@ -146,31 +128,5 @@ class TusimpleLoader(Dataset):
 #     print(len(loader))
 #     for i,j in enumerate(loader):
 #         print(j.keys())
-#     #     print(j[1]['mask'].shape)
-#     img_norm = dict(
-#     mean=[103.939, 116.779, 123.68],
-#     std=[1., 1., 1.]
-#     )
-
-#     img_height = 368
-#     img_width = 640
-
-#     size = (img_height,img_width)
-#     rand = np.random.rand(720,1280,3)
-#     mask = np.random.rand(720,1280)
-#     lanes = [0,203,34,5,6,6,6,6]
-    
-#     sample = {}
-#     sample.update({"img":rand})
-#     sample.update({"mask":mask})
-#     # sample.update({'lanes':lanes})
-
-#     print(sample.keys())
-
-#     data = compose_transforms(sample,size, img_norm)
-
-#     print(data['img'].shape)
-#     print(data['mask'].shape)
-
 
 
