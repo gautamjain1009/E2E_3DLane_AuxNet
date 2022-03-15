@@ -49,7 +49,6 @@ class Registry(object):
         self._register_module(cls)
         return cls
 
-
 def build_from_cfg(cfg, registry, default_args=None):
     """Build a module from config dict.
 
