@@ -1,5 +1,5 @@
 """
-Tu simple dataloader for 2d lane segmentation. Inspired by: https://github.com/Turoad/lanedet/blob/main/lanedet/datasets/tusimple.py
+Tu simple dataloader for 2d lane segmentation.
 """
 
 import torch 

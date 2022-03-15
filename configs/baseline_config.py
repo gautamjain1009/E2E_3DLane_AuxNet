@@ -1,6 +1,6 @@
-# net = dict(
-#     type='Detector',
-# )
+net = dict(
+    type='baseline',
+)
 
 # backbone = dict(
 #     type='ResNetWrapper',
@@ -94,9 +94,9 @@ dataset = dict(
 
 workers = 12
 num_classes = 6 + 1
-ignore_label = 255
-log_interval = 100
-eval_ep = 1
-save_ep = epochs
+# ignore_label = 255
+# log_interval = 100
+# eval_ep = 1
+# save_ep = epochs
 test_json_file='/home/gautam/e2e/lane_detection/2d_approaches/dataset/tusimple/test_label.json'
-lr_update_by_epoch = False
+# lr_update_by_epoch = False
