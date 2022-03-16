@@ -9,7 +9,7 @@ DATASETS = Registry('datasets')
 AUGMENTATION = Registry('augmentation')
 
 """
-Build all the datasets here and call them in the main function with the config for the approach
+Build all the datasets here and call them in the main with the config for the approach
 """
 
 """
@@ -24,7 +24,7 @@ def build(cfg, registry, default_args=None):
     else:
         return build_from_cfg(cfg, registry, default_args)
 
-##TODO: Implement it in case I need lane line points for predicting existance
+##TODO: Implement it in case I need lane line points for vis
 # def collate_fn(instances):
 #     batch = []
 

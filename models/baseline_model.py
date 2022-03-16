@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.init as init
 import torch.nn.functional as F
+# from .registry import BASELINE
 
 class DownsamplerBlock(nn.Module):
     def __init__(self, ninput, noutput):
@@ -133,7 +134,7 @@ class Decoder(nn.Module):
 
         return output
 
-
+# Pathway to check if lane exists only valid for CULANE dataset
 class Lane_exist(nn.Module):
     def __init__(self, num_output):
         super().__init__()
@@ -149,15 +150,14 @@ class Lane_exist(nn.Module):
         self.layers_final.append(nn.Conv2d(32, 5, (1, 1), stride=1, padding=(0, 0), bias=True))
 
         self.maxpool = nn.MaxPool2d(2, stride=2)
-        self.linear1 = nn.Linear(4600, 128)
-        self.linear2 = nn.Linear(128, 4)
+        self.linear1 = nn.Linear(4600, 128) #
+        self.linear2 = nn.Linear(128, 4) # 
 
     def forward(self, input):
         output = input
 
         for layer in self.layers:
             output = layer(output)
-
         output = F.relu(output)
 
         for layer in self.layers_final:
@@ -165,42 +165,47 @@ class Lane_exist(nn.Module):
 
         output = F.softmax(output, dim=1)
         output = self.maxpool(output)
+        
+        # Here is the problem
         output = output.view(-1, output.shape[0]*output.shape[1]*output.shape[2]*output.shape[3])
         output = self.linear1(output)
         output = F.relu(output)
         output = self.linear2(output)
-        output = F.sigmoid(output)
+        output = torch.sigmoid(output)
 
         return output
 
 
+# @BASELINE.register_module
 class ERFNet(nn.Module):
-    def __init__(self, num_classes, encoder=None):  # use encoder to pass pretrained encoder
+    def __init__(self, num_classes, exist_head = False, encoder=None):  # use encoder to pass pretrained encoder
         super().__init__()
 
+        self.exist_head = exist_head
         if (encoder == None):
             self.encoder = Encoder(num_classes)
         else:
             self.encoder = encoder
         self.decoder = Decoder(num_classes)
-        self.lane_exist = Lane_exist(4)  # num_output
-        # self.input_mean = [103.939, 116.779, 123.68]  # [0, 0, 0]
-        # self.input_std = [1, 1, 1]
+        self.lane_exist = Lane_exist(4)  # num_output lanes
 
     def forward(self, input, only_encode=False):
         '''if only_encode:
             return self.encoder.forward(input, predict=True)
         else:'''
         output = self.encoder(input)  # predict=False by default
-        return self.decoder.forward(output), self.lane_exist(output)
+        
+        if self.exist_head: #only for CULANE dataset
+            ##TODO: fix the batch size issue in the exist head >1
+            return self.decoder.forward(output), self.lane_exist(output)
+        else: 
+            return self.decoder.forward(output)
 
+# if __name__ == "__main__":
+#     #unit test 
+#     model = ERFNet(7,exist_head= True)
+#     input = torch.rand(2,3,368,640)
 
+#     out = model(input)
 
-if __name__ == "__main__":
-    #unit test 
-    model = ERFNet(1)
-    input = torch.rand(1,3,368,640)
-
-    out = model(input)
-
-    print(out[0].shape)
+#     print(out[0].shape)

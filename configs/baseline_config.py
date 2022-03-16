@@ -1,54 +1,13 @@
-net = dict(
-    type='baseline',
-)
-
-# backbone = dict(
-#     type='ResNetWrapper',
-#     resnet='resnet18',
-#     pretrained=True,
-#     replace_stride_with_dilation=[False, True, True],
-#     out_conv=True,
-# )
-# featuremap_out_channel = 128
-# featuremap_out_stride = 8
-
-# aggregator = dict(
-#     type='SCNN',
-# )
-
-# sample_y=range(710, 150, -10)
-# heads = dict(
-#     type='LaneSeg',
-#     decoder=dict(type='PlainDecoder'),
-#     thr=0.6,
-#     sample_y=sample_y,
-# )
-
-# optimizer = dict(
-#   type = 'SGD',
-#   lr = 0.025,
-#   weight_decay = 1e-4,
-#   momentum = 0.9
-# )
-
-
-epochs = 100
-batch_size = 8 
-total_iter = (3616 // batch_size + 1) * epochs #TODO: change the number of iterations as per length of dataset
-# import math
-# scheduler = dict(
-#     type = 'LambdaLR',
-#     lr_lambda = lambda _iter : math.pow(1 - _iter/total_iter, 0.9)
-# )
-
-# bg_weight = 0.4
+"""
+Dataloader params
+"""
 img_norm = dict(
     mean=[103.939, 116.779, 123.68],
     std=[1., 1., 1.]
 )
 
-img_height = 368
-img_width = 640
+img_height = 360
+img_width = 480
 cut_height = 160
 ori_img_h = 720
 ori_img_w = 1280
@@ -92,6 +51,9 @@ dataset = dict(
     )
 )
 
+"""
+training params
+"""
 workers = 12
 num_classes = 6 + 1
 # ignore_label = 255
@@ -100,3 +62,25 @@ num_classes = 6 + 1
 # save_ep = epochs
 test_json_file='/home/gautam/e2e/lane_detection/2d_approaches/dataset/tusimple/test_label.json'
 # lr_update_by_epoch = False
+
+net = dict(
+    type='baseline',
+    num_classes = num_classes,
+    exist_head = False # valid only for CUlane
+)
+
+epochs = 100
+batch_size = 8 
+l2_lambda = 1e-4
+log_frequency_steps = 200
+lr = 0.001 
+lrs_cd = 0
+lrs_factor = 0.75
+lrs_min = 1e-6
+lrs_patience = 3
+lrs_thresh = 1e-4
+prefetch_factor = 2
+val_frequency_steps = 500
+
+total_iter = (3616 // batch_size + 1) * epochs #TODO: change the number of iterations as per length of dataset
+bg_weight = 0.4 #used in the loss function to reduce the importance of one class in tusimple
