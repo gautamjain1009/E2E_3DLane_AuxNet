@@ -108,7 +108,6 @@ class TusimpleLoader(Dataset):
         #augmentation
         if self.transform:
             batch = self.process(batch)
-            batch = batch
         else:
             batch = batch
 

@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.init as init
 import torch.nn.functional as F
-# from .registry import BASELINE
+from .registry import BASELINE
 
 class DownsamplerBlock(nn.Module):
     def __init__(self, ninput, noutput):
@@ -138,7 +138,6 @@ class Decoder(nn.Module):
 class Lane_exist(nn.Module):
     def __init__(self, num_output):
         super().__init__()
-
         self.layers = nn.ModuleList()
 
         self.layers.append(nn.Conv2d(128, 32, (3, 3), stride=1, padding=(4, 4), bias=False, dilation=(4, 4)))
@@ -176,7 +175,7 @@ class Lane_exist(nn.Module):
         return output
 
 
-# @BASELINE.register_module
+@BASELINE.register_module
 class ERFNet(nn.Module):
     def __init__(self, num_classes, exist_head = False, encoder=None):  # use encoder to pass pretrained encoder
         super().__init__()

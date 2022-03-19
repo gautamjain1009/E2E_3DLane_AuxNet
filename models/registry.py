@@ -1,7 +1,7 @@
 from utils.registry import Registry, build_from_cfg
 import torch.nn as nn
 
-# BASELINE = Registry('baseline')
+BASELINE = Registry('baseline')
 
 def build(cfg, registry, default_args=None):
     if isinstance(cfg, list):
@@ -12,4 +12,7 @@ def build(cfg, registry, default_args=None):
     else:
         return build_from_cfg(cfg, registry, default_args)
 
-## add build functions for different backbones, aggregators and heads. 
+
+def build_baseline(split_cfg, cfg):
+
+    return build(split_cfg, BASELINE)
