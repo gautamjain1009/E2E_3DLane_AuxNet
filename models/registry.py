@@ -14,5 +14,5 @@ def build(cfg, registry, default_args=None):
 
 
 def build_baseline(split_cfg, cfg):
-
+    print(BASELINE)
     return build(split_cfg, BASELINE)

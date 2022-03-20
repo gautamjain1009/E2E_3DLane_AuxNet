@@ -58,17 +58,23 @@ workers = 12
 num_classes = 6 + 1
 # ignore_label = 255
 # log_interval = 100
-# eval_ep = 1
-# save_ep = epochs
+
 test_json_file='/home/gautam/e2e/lane_detection/2d_approaches/dataset/tusimple/test_label.json'
-# lr_update_by_epoch = False
+
 
 net = dict(
-    type='baseline',
+    type='ERFNet',
     num_classes = num_classes,
     exist_head = False # valid only for CUlane
 )
 
+###logging params
+date_it = "20_March"
+train_run_name = "baseline_2dLane" + date_it
+val_frequency = 500
+train_log_frequency = 50
+
+#Hyperparams
 epochs = 100
 batch_size = 8 
 l2_lambda = 1e-4
@@ -80,7 +86,5 @@ lrs_min = 1e-6
 lrs_patience = 3
 lrs_thresh = 1e-4
 prefetch_factor = 2
-val_frequency_steps = 500
-
 total_iter = (3616 // batch_size + 1) * epochs #TODO: change the number of iterations as per length of dataset
 bg_weight = 0.4 #used in the loss function to reduce the importance of one class in tusimple
