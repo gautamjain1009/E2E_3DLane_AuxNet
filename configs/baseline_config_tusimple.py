@@ -25,7 +25,7 @@ train_augmentation = [
 val_augmentation = [
     dict(type='Resize', size=(img_width, img_height)),
     dict(type='Normalize', img_norm=img_norm),
-    dict(type='ToTensor', keys=['img']),
+    dict(type='ToTensor')
 ] 
 
 dataset_path = '/home/gautam/e2e/lane_detection/2d_approaches/dataset/tusimple'
@@ -69,10 +69,10 @@ net = dict(
 )
 
 ###logging params
-date_it = "20_March"
+date_it = "20_March_" #TODO: remove it from argparse
 train_run_name = "baseline_2dLane" + date_it
-val_frequency = 500
-train_log_frequency = 1
+val_frequency = 1
+train_log_frequency = 2
 
 #Hyperparams
 epochs = 100
