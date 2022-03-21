@@ -148,21 +148,28 @@ if __name__ == "__main__":
             should_run_valid = (itr+1) % cfg.val_frequency == 0
             
             multitimings.start('train_batch')
-            optimizer.zero_grad(set_to_none=True)
 
-            gt_mask = data['mask'].to(device)
-            # print(gt_mask.shape)
-            input_img = data['img'].to(device)
+            optimizer.zero_grad(set_to_none=True)
             
-            seg_out = model(input_img)
-            #TODO: verify the dim of the softmax dim
-            seg_loss = criterion(F.log_softmax(seg_out, dim =1), gt_mask.long())
-    
-            # TODO: add a condition of lane exist loss
-            seg_loss.backward()
+            with Timing(timings, "inputs_to_GPU"):
+                gt_mask = data['mask'].to(device)
+                # print(gt_mask.shape)
+                input_img = data['img'].to(device)
+                
+            with Timing(timings,"forward_pass"):
+                seg_out = model(input_img)
+            
+            with Timing(timings,"seg_loss"):
+                #TODO: verify the dim of the softmax dim
+                seg_loss = criterion(F.log_softmax(seg_out, dim =1), gt_mask.long())
+                # TODO: add a condition of lane exist loss
+            
+            with Timing(timings,"backward_pass"):    
+                seg_loss.backward()
 
             #TODO: Add clippping gradients with argparse
-            optimizer.step()
+            with Timing(timings, "optimizer step"):
+                optimizer.step()
             
             batch_loss = seg_loss.detach().cpu()/cfg.batch_size
             train_batch_time= multitimings.end('train_batch')
@@ -175,10 +182,9 @@ if __name__ == "__main__":
 
             if should_log_train: 
                 
-                #TODO: Add timings
                 running_loss = tr_loss.item() / cfg.train_log_frequency 
                 print(f"Epoch: {epoch+1}/{cfg.epochs}. Done {itr+1} steps of ~{train_loader_len}. Running Loss:{running_loss:.4f}")
-                
+                pprint_stats(timings)
                 #TODO: Add wandb logging
 
                 tr_loss = 0.0
