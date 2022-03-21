@@ -12,8 +12,6 @@ cut_height = 160
 ori_img_h = 720
 ori_img_w = 1280
 
-# size=(img_width, img_height)
-#depreciated in my implementation just for reference
 train_augmentation = [
     dict(type='RandomRotation'),
     dict(type='RandomHorizontalFlip'),
@@ -57,10 +55,8 @@ training params
 workers = 12
 num_classes = 6 + 1
 # ignore_label = 255
-# log_interval = 100
 
 test_json_file='/home/gautam/e2e/lane_detection/2d_approaches/dataset/tusimple/test_label.json'
-
 
 net = dict(
     type='ERFNet',
