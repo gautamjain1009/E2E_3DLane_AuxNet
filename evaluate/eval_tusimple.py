@@ -95,7 +95,7 @@ if __name__ == '__main__':
     try:
         if len(sys.argv) != 3:
             raise Exception('Invalid input arguments')
-        print LaneEval.bench_one_submit(sys.argv[1], sys.argv[2])
+        print(LaneEval.bench_one_submit(sys.argv[1], sys.argv[2]))
     except Exception as e:
-        print e.message
+        print(e.message)
         sys.exit(e.message)

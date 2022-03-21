@@ -76,42 +76,42 @@ class TusimpleLoader(Dataset):
     
     """"
     Needs to be tested (TO be used for eval metrics)
-    """
-    def pred2lanes(self, pred):
-        ys = np.array(self.h_samples) / self.cfg.ori_img_h
-        lanes = []
-        for lane in pred:
-            xs = lane(ys)
-            invalid_mask = xs < 0
-            lane = (xs * self.cfg.ori_img_w).astype(int)
-            lane[invalid_mask] = -2
-            lanes.append(lane.tolist())
+    # """
+    # def pred2lanes(self, pred):
+    #     ys = np.array(self.h_samples) / self.cfg.ori_img_h
+    #     lanes = []
+    #     for lane in pred:
+    #         xs = lane(ys)
+    #         invalid_mask = xs < 0
+    #         lane = (xs * self.cfg.ori_img_w).astype(int)
+    #         lane[invalid_mask] = -2
+    #         lanes.append(lane.tolist())
 
-        return lanes
+    #     return lanes
 
-    def pred2tusimpleformat(self, idx, pred, runtime):
-        runtime *= 1000.  # s to ms
-        img_name = self.data_infos[idx]['img_name']
-        lanes = self.pred2lanes(pred)
-        output = {'raw_file': img_name, 'lanes': lanes, 'run_time': runtime}
-        return json.dumps(output)
+    # def pred2tusimpleformat(self, idx, pred, runtime):
+    #     runtime *= 1000.  # s to ms
+    #     img_name = self.data_infos[idx]['img_name']
+    #     lanes = self.pred2lanes(pred)
+    #     output = {'raw_file': img_name, 'lanes': lanes, 'run_time': runtime}
+    #     return json.dumps(output)
 
-    def save_tusimple_predictions(self, predictions, filename, runtimes=None):
-        if runtimes is None:
-            runtimes = np.ones(len(predictions)) * 1.e-3
-        lines = []
-        for idx, (prediction, runtime) in enumerate(zip(predictions, runtimes)):
-            line = self.pred2tusimpleformat(idx, prediction, runtime)
-            lines.append(line)
-        with open(filename, 'w') as output_file:
-            output_file.write('\n'.join(lines))
+    # def save_tusimple_predictions(self, predictions, filename, runtimes=None):
+    #     if runtimes is None:
+    #         runtimes = np.ones(len(predictions)) * 1.e-3
+    #     lines = []
+    #     for idx, (prediction, runtime) in enumerate(zip(predictions, runtimes)):
+    #         line = self.pred2tusimpleformat(idx, prediction, runtime)
+    #         lines.append(line)
+    #     with open(filename, 'w') as output_file:
+    #         output_file.write('\n'.join(lines))
 
-    def evaluate(self, predictions, output_basedir, runtimes=None):
-        pred_filename = os.path.join(output_basedir, 'tusimple_predictions.json')
-        self.save_tusimple_predictions(predictions, pred_filename, runtimes)
-        result, acc = LaneEval.bench_one_submit(pred_filename, self.cfg.test_json_file)
-        self.logger.info(result)
-        return acc
+    # def evaluate(self, predictions, output_basedir, runtimes=None):
+    #     pred_filename = os.path.join(output_basedir, 'tusimple_predictions.json')
+    #     self.save_tusimple_predictions(predictions, pred_filename, runtimes)
+    #     result, acc = LaneEval.bench_one_submit(pred_filename, self.cfg.test_json_file)
+    #     self.logger.info(result)
+    #     return acc
 
     def __len__(self):
         return len(self.data)
@@ -150,7 +150,8 @@ class TusimpleLoader(Dataset):
             batch = self.process(batch)
         else:
             batch = batch
-
+        
+        batch.update({'full_img_path':sample['img_path']})
         return batch 
 
 # if __name__ == "__main__":

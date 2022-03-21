@@ -68,8 +68,6 @@ if __name__ == "__main__":
     # dataloader
     train_loader = build_dataloader(cfg.dataset.train, cfg, is_train = True)
     val_loader = build_dataloader(cfg.dataset.val, cfg, is_train = False)
-    
-    #TODO: add vis laoder
 
     train_loader_len = len(train_loader)
     val_loader_len = len(val_loader)
@@ -198,8 +196,10 @@ if __name__ == "__main__":
                                         }, commit=True)
 
                             tr_loss = 0.0
-
+                            
                         #eval Loop 
+                        # TODO:  add wandb visualisation for eval predictions 
+                        # TODO:  create model checkpoint only with best metric or logic comapre to past metrics
                         if should_run_valid:
                             model.eval()
                                         
