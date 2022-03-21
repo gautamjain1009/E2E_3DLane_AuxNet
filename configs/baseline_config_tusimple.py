@@ -72,7 +72,7 @@ net = dict(
 date_it = "20_March"
 train_run_name = "baseline_2dLane" + date_it
 val_frequency = 500
-train_log_frequency = 50
+train_log_frequency = 1
 
 #Hyperparams
 epochs = 100
