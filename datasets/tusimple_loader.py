@@ -42,8 +42,6 @@ class TusimpleLoader(Dataset):
         self.load_dataset()
         self.logger.info("Tusimple annotations loaded")
         self.process = Process(transform,self.cfg)
-        # self.size = self.cfg.size
-        # self.img_norm = self.cfg.img_norm 
         
     def load_dataset(self):
 
@@ -126,7 +124,7 @@ class TusimpleLoader(Dataset):
         
         img = cv2.imread(sample['img_path'])
     
-        ## TODO:resizing as per cut height
+        img = img[self.cfg.cut_height:, :, :]
         batch.update({'img':img})
 
         if self.split =="train" or "trainval":
@@ -139,7 +137,7 @@ class TusimpleLoader(Dataset):
                 label = label[:,:,0] 
             label = label.squeeze()
             
-            ##TODO:resizing as per cut height
+            label = label[self.cfg.cut_height:, :, :]
             batch.update({'mask': label})
         
         #TODO: enable lanedata
