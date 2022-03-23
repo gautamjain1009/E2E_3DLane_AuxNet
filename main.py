@@ -9,6 +9,7 @@ import wandb
 import time
 
 from utils.config import Config
+from utils.visualization import LaneVisualisation
 import argparse 
 import torch.backends.cudnn as cudnn 
 import numpy as np 
@@ -22,7 +23,6 @@ logging.basicConfig(level = logging.DEBUG)
 #build import for different modules
 from datasets.registry import build_dataloader
 from models.registry import build_baseline
-
 
 def pprint_seconds(seconds):
     hours = seconds // 3600
@@ -52,6 +52,9 @@ if __name__ == "__main__":
 
     #parasing config file
     cfg = Config.fromfile(args.config)
+
+    #init vis class
+    vis = LaneVisualisation(cfg)
 
     #wandb init
     run = wandb.init(entity = os.environ["WANDB_ENTITY"], project = os.environ["WANDB_PROJECT"], name = cfg.train_run_name, mode = 'offline' if args.no_wandb else 'online') 
@@ -143,13 +146,15 @@ if __name__ == "__main__":
                     for itr, data in enumerate(train_loader): 
                         model.train()
 
+                        #TODO: correct batch_loading time when make functions
                         batch_load_time = multitimings.end('batch_load')
                         print(f"Got new batch: {batch_load_time:.2f}s - training iteration: {itr}")
                     
                         #flag for train log and validation loop
                         should_log_train = (itr+1) % cfg.train_log_frequency == 0 
                         should_run_valid = (itr+1) % cfg.val_frequency == 0
-                        
+                        should_run_vis = (itr+1) % cfg.val_frequency == 0
+
                         multitimings.start('train_batch')
 
                         optimizer.zero_grad(set_to_none=True)
@@ -184,15 +189,16 @@ if __name__ == "__main__":
                         tr_loss += batch_loss
 
                         if should_log_train: 
-                            
+
                             running_loss = tr_loss.item() / cfg.train_log_frequency 
                             print(f"Epoch: {epoch+1}/{cfg.epochs}. Done {itr+1} steps of ~{train_loader_len}. Running Loss:{running_loss:.4f}")
                             pprint_stats(timings)
-                            
+
+                            print("Checking learning rate::",type(scheduler.optimizer.param_groups[0]['lr']))
                             wandb.log({'epoch': epoch, 
                                         'train_loss':running_loss,
-                                        'lr': scheduler.optimizer.param_groups[0]['lr']
-                                        # **{f'time_{k}': v['time'] / v['count'] for k, v in timings.items()}
+                                        'lr': scheduler.optimizer.param_groups[0]['lr'],
+                                        **{f'time_{k}': v['time'] / v['count'] for k, v in timings.items()}
                                         }, commit=True)
 
                             tr_loss = 0.0
@@ -204,7 +210,6 @@ if __name__ == "__main__":
                             model.eval()
                                         
                             print(">>>>>>>>>Validating<<<<<<<<<")
-                            #TODO: add wandb visualization
 
                             val_loss = 0.0  
                             val_batch_loss = 0.0
@@ -214,31 +219,57 @@ if __name__ == "__main__":
                                         val_gt_mask = val_data['mask'].to(device)
                                         val_img = val_data['img'].to(device)
 
-                                    val_seg_out = model(val_img)
+                                        val_seg_out = model(val_img)
                                     
-                                    val_seg_loss = criterion(F.log_softmax(val_seg_out, dim =1), val_gt_mask.long())
+                                        val_seg_loss = criterion(F.log_softmax(val_seg_out, dim =1), val_gt_mask.long())
 
-                                    val_batch_loss = val_seg_loss.detach().cpu()/cfg.batch_size
+                                        val_batch_loss = val_seg_loss.detach().cpu()/cfg.batch_size
 
-                                    val_loss += val_batch_loss
+                                        val_loss += val_batch_loss
 
-                                    if (val_itr+1) % 10 == 0:
-                                        val_running_loss = val_loss.item() / (val_itr+1)
-                                        print(f"Validation: {val_itr+1} steps of ~{val_loader_len}.  Validation Running Loss {val_running_loss:.4f}")    
+                                        if (val_itr+1) % 10 == 0:
+                                            val_running_loss = val_loss.item() / (val_itr+1)
+                                            print(f"Validation: {val_itr+1} steps of ~{val_loader_len}.  Validation Running Loss {val_running_loss:.4f}")    
                                         
                                     val_avg_loss = val_loss / (val_itr+1)
                                     print(f"Validation Loss: {val_avg_loss}")
 
-                                wandb.log({'Validation_loss': val_avg_loss,}, commit=False)
+                            wandb.log({'Validation_loss': val_avg_loss,}, commit=False)
                             
                             scheduler.step(val_avg_loss.item())
 
-                            print(">>>>>>>>Creating model Checkpoint<<<<<<<")
-                            checkpoint_save_file = cfg.train_run_name + str(val_avg_loss.item()) +"_" + str(epoch+1) + ".pth"
-                            checkpoint_save_path = os.path.join(checkpoints_dir,checkpoint_save_file)
+                            # print(">>>>>>>>Creating model Checkpoint<<<<<<<")
+                            # checkpoint_save_file = cfg.train_run_name + str(val_avg_loss.item()) +"_" + str(epoch+1) + ".pth"
+                            # checkpoint_save_path = os.path.join(checkpoints_dir,checkpoint_save_file)
 
-                            torch.save(model.state_dict(),checkpoint_save_path)
-                    
+                            # torch.save(model.state_dict(),checkpoint_save_path)
+
+
+                        if should_run_vis: #TODO: When move to functions, add it along the validation process
+                            model.eval()
+                            print(">>>>>>>visualization<<<<<<")
+                            
+                            with torch.no_grad():
+                                for vis_itr, vis_data in enumerate(val_loader): 
+                                    # batch size is suppose 6, therfore there exists 6 images only that needs to be vis and break after that 
+                                    
+                                    vis_image = vis_data['img'].to(device) #to be used for predictions 
+                                    vis_image_path = vis_data['full_img_path']
+
+                                    predictions = {}
+                                    vis_pred = model(vis_image)
+                                    print(vis_pred[0:1, :, :, :].shape)
+
+                                    predictions.update({"seg":vis_pred[0:1] })
+                                    
+                                    vis_out = vis.draw_lines(vis_image_path[0], predictions)
+                                    # print(len(vis_out))
+                                    # print(vis_out)
+
+
+
+                                    break #break the loop after vis. predict. for 6 images        
+               
                     #reporting epoch train time 
                     print(f"Epoch {epoch+1} done! Took {pprint_seconds(time.time()- start_point)}")
 
@@ -248,33 +279,7 @@ if __name__ == "__main__":
                 print("Saved the train model")
                 print("Training finished")
 
-                        
 
 
-
-
-
-
-
-
-
-                        
-
-
-
-            
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        #                 self.sample_y = range(710,150, -10) #TODO: move it to config
+        # self.thr = 0.6

@@ -6,11 +6,15 @@ img_norm = dict(
     std=[1., 1., 1.]
 )
 
-img_height = 360
-img_width = 480
+img_height = 368
+img_width = 640
 cut_height = 160
 ori_img_h = 720
 ori_img_w = 1280
+
+#for vis
+sample_y = range(710,150, -10)
+thr = 0.6
 
 train_augmentation = [
     dict(type='RandomRotation'),
@@ -68,7 +72,7 @@ net = dict(
 date_it = "20_March_" #TODO: remove it from argparse
 train_run_name = "baseline_2dLane" + date_it
 val_frequency = 1
-train_log_frequency = 2
+train_log_frequency = 1
 
 #Hyperparams
 epochs = 100

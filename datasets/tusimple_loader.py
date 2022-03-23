@@ -137,7 +137,7 @@ class TusimpleLoader(Dataset):
                 label = label[:,:,0] 
             label = label.squeeze()
             
-            label = label[self.cfg.cut_height:, :, :]
+            label = label[self.cfg.cut_height:, :]
             batch.update({'mask': label})
         
         #TODO: enable lanedata
