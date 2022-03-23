@@ -1,3 +1,5 @@
+#This code is modified from: https://github.com/Turoad/lanedet
+
 import torch 
 import cv2 
 import os 
@@ -129,10 +131,7 @@ class LaneVisualisation(object):
         return lane
 
     def draw_lines(self, img_path, predictions):
-        ## this function will be called in the train script
-        ## the output fed to this function 
-        ## remember to enable cut height
-        print(img_path)
+
         if not os.path.isfile(img_path):
                 raise FileNotFoundError('cannot find image: {}'.format(img_path))
         
@@ -140,7 +139,7 @@ class LaneVisualisation(object):
         
         pred_2_lane = self.get_lanes(predictions)[0]
 
-        lanes = [lane.to_array(self.cfg) for lane in pred_2_lane]
+        lanes = [lane.to_array(self.cfg) for lane in pred_2_lane] ## TODO: Verify if working in my case
         
         for lane in lanes:
             for x, y in lane: 
@@ -149,7 +148,6 @@ class LaneVisualisation(object):
                 x,y = int(x), int(y)
                 # print(x,y)
                 img = cv2.circle(orig_image, (x, y), 4, (255, 0, 0), 2)
-                cv2.imwrite("/home/gautam/Thesis/E2E_3DLane_AuxNet/vis_test/test.jpg",img)
-        ## To draw polylines on the image and return the image
+        ## TODO: plot polylines
                 
-        return lanes
+        return img

@@ -254,32 +254,29 @@ if __name__ == "__main__":
                                     # batch size is suppose 6, therfore there exists 6 images only that needs to be vis and break after that 
                                     
                                     vis_image = vis_data['img'].to(device) #to be used for predictions 
-                                    vis_image_path = vis_data['full_img_path']
+                                    orig_image_path = vis_data['full_img_path']
 
                                     predictions = {}
                                     vis_pred = model(vis_image)
-                                    print(vis_pred[0:1, :, :, :].shape)
+                                    # print(vis_pred[0:1, :, :, :].shape)
+                                    images = []
+                                    for i in range(cfg.batch_size):
 
-                                    predictions.update({"seg":vis_pred[0:1] })
-                                    
-                                    vis_out = vis.draw_lines(vis_image_path[0], predictions)
-                                    # print(len(vis_out))
-                                    # print(vis_out)
+                                        predictions.update({"seg":vis_pred[i:i+1, :, :, :] })
+                                        
+                                        vis_img = vis.draw_lines(orig_image_path[i], predictions)
+                                        # vis_image_path = "/home/gautam/Thesis/E2E_3DLane_AuxNet/vis_test/test" + str(i) + ".jpg"
+                                        
+                                        images.append(vis_img)
 
-
+                                    wandb.log({"validate Predictions":[wandb.Image(image) for image in images]})
 
                                     break #break the loop after vis. predict. for 6 images        
                
                     #reporting epoch train time 
                     print(f"Epoch {epoch+1} done! Took {pprint_seconds(time.time()- start_point)}")
 
-
                 train_model_savepath = os.path.join(result_model_dir, cfg.train_run_name + ".pth")
                 torch.save(model.state_dict(), train_model_savepath)
                 print("Saved the train model")
                 print("Training finished")
-
-
-
-        #                 self.sample_y = range(710,150, -10) #TODO: move it to config
-        # self.thr = 0.6
