@@ -59,6 +59,7 @@ class LaneEval(object):
         except BaseException as e:
             raise Exception('Fail to load json file of the prediction.')
         json_gt = [json.loads(line) for line in open(gt_file).readlines()]
+
         if len(json_gt) != len(json_pred):
             raise Exception('We do not get the predictions of all the test tasks')
         gts = {l['raw_file']: l for l in json_gt}
@@ -83,12 +84,14 @@ class LaneEval(object):
             fn += n
         num = len(gts)
         # the first return parameter is the default ranking parameter
-        return json.dumps([
-            {'name': 'Accuracy', 'value': accuracy / num, 'order': 'desc'},
-            {'name': 'FP', 'value': fp / num, 'order': 'asc'},
-            {'name': 'FN', 'value': fn / num, 'order': 'asc'}
-        ])
-
+        # return json.dumps([
+        #     {'name': 'Accuracy', 'value': accuracy / num, 'order': 'desc'},
+        #     {'name': 'FP', 'value': fp / num, 'order': 'asc'},
+        #     {'name': 'FN', 'value': fn / num, 'order': 'asc'}
+        # ])
+        metrics = {"Accuracy":accuracy/num,"FP": fp/num, "FN": fn/num}
+    
+        return metrics 
 
 if __name__ == '__main__':
     import sys

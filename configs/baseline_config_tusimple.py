@@ -42,7 +42,7 @@ dataset = dict(
     val=dict(
         type='TusimpleLoader',
         data_root=dataset_path,
-        split='val',
+        split='test',
         transform = val_augmentation
     ),
     test=dict(
@@ -71,8 +71,8 @@ net = dict(
 ###logging params
 date_it = "20_March_" #TODO: remove it from argparse
 train_run_name = "baseline_2dLane" + date_it
-val_frequency = 1
-train_log_frequency = 1
+val_frequency = 200
+train_log_frequency = 10
 
 #Hyperparams
 epochs = 100
@@ -86,5 +86,4 @@ lrs_min = 1e-6
 lrs_patience = 3
 lrs_thresh = 1e-4
 prefetch_factor = 2
-total_iter = (3616 // batch_size + 1) * epochs #TODO: change the number of iterations as per length of dataset
 bg_weight = 0.4 #used in the loss function to reduce the importance of one class in tusimple

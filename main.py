@@ -30,6 +30,7 @@ def pprint_seconds(seconds):
     seconds = seconds % 60
     return f"{int(hours):1d}h {int(minutes):1d}min {int(seconds):1d}s"
 
+##Main TODO: remove out['seg'] dependability of the pipieline 
 if __name__ == "__main__":
 
     cuda = torch.cuda.is_available()
@@ -84,9 +85,11 @@ if __name__ == "__main__":
         #idea for test loop and how the evaluation is carried out (Done)
         #trian loop /Eval loop (Done)
         #add timmings (Done)
-        #Integrate with wandb including model visulization 
+        #Integrate with wandb including model visulization (Done)
         #checkpoint dirs (Done)
         #model.train() and model.eval() (Done)
+        #Make functions for trian, eval and vis 
+        #Verify if training is correct (as training loss is not improving in initial runs)
 
     """ model defination TODO: add to build function"""
     def reinitialize_weights(layer_weight):
@@ -125,6 +128,8 @@ if __name__ == "__main__":
                                                         threshold= cfg.lrs_thresh, verbose=True, min_lr= cfg.lrs_min,
                                                         cooldown=cfg.lrs_cd)
     #train loop 
+    
+    metric = 0 ## TODO: put in init when making class 
     with run:
         print("==> Reporting Argeparse params")
         for arg in vars(args):
@@ -194,7 +199,6 @@ if __name__ == "__main__":
                             print(f"Epoch: {epoch+1}/{cfg.epochs}. Done {itr+1} steps of ~{train_loader_len}. Running Loss:{running_loss:.4f}")
                             pprint_stats(timings)
 
-                            print("Checking learning rate::",type(scheduler.optimizer.param_groups[0]['lr']))
                             wandb.log({'epoch': epoch, 
                                         'train_loss':running_loss,
                                         'lr': scheduler.optimizer.param_groups[0]['lr'],
@@ -202,25 +206,31 @@ if __name__ == "__main__":
                                         }, commit=True)
 
                             tr_loss = 0.0
-                            
+    
                         #eval Loop 
-                        # TODO:  add wandb visualisation for eval predictions 
-                        # TODO:  create model checkpoint only with best metric or logic comapre to past metrics
                         if should_run_valid:
-                            model.eval()
-                                        
+                            model.eval()         
                             print(">>>>>>>>>Validating<<<<<<<<<")
-
+                            
                             val_loss = 0.0  
                             val_batch_loss = 0.0
                             with Timing(timings, "validate"):
                                 with torch.no_grad():
+                                    val_pred = []
+                                    pred_out = {}
+
                                     for val_itr, val_data in enumerate(val_loader):
+                                        
                                         val_gt_mask = val_data['mask'].to(device)
                                         val_img = val_data['img'].to(device)
-
+                                        
                                         val_seg_out = model(val_img)
-                                    
+                                        pred_out.update({'seg':val_seg_out})
+                                        pred_out_list = vis.get_lanes(pred_out)
+                                        
+                                        val_pred.extend(pred_out_list)
+                                        
+                                        ## TODO: Verify if test split has seg_masks only then validation loss needs to be calculated
                                         val_seg_loss = criterion(F.log_softmax(val_seg_out, dim =1), val_gt_mask.long())
 
                                         val_batch_loss = val_seg_loss.detach().cpu()/cfg.batch_size
@@ -233,17 +243,29 @@ if __name__ == "__main__":
                                         
                                     val_avg_loss = val_loss / (val_itr+1)
                                     print(f"Validation Loss: {val_avg_loss}")
+                                    
+                                    # evaluate 
+                                    pred_json_save_path = "/home/gautam/Thesis/E2E_3DLane_AuxNet/pred_json" 
+                                    
+                                    curr_metric = val_loader.dataset.evaluate(val_pred, pred_json_save_path)
+                                    curr_acc = curr_metric["Accuracy"]
+                                    print("Current Acccuracy",curr_acc)
+                                    
+                                    #making model checkpoints on the basis of accuracy
+                                    if curr_acc> metric:
+                                        print("I was here")
+                                        metric = curr_acc
+                                        print(f"Best Metric for Epoch:{epoch+1} and train itr. {itr} is: {curr_metric} ")
+
+                                        print(">>>>>>>>Creating model Checkpoint<<<<<<<")
+                                        checkpoint_save_file = cfg.train_run_name + str(val_avg_loss.item()) +"_" + str(epoch+1) + ".pth"
+                                        checkpoint_save_path = os.path.join(checkpoints_dir,checkpoint_save_file)
+
+                                        torch.save(model.state_dict(),checkpoint_save_path)
 
                             wandb.log({'Validation_loss': val_avg_loss,}, commit=False)
                             
                             scheduler.step(val_avg_loss.item())
-
-                            # print(">>>>>>>>Creating model Checkpoint<<<<<<<")
-                            # checkpoint_save_file = cfg.train_run_name + str(val_avg_loss.item()) +"_" + str(epoch+1) + ".pth"
-                            # checkpoint_save_path = os.path.join(checkpoints_dir,checkpoint_save_file)
-
-                            # torch.save(model.state_dict(),checkpoint_save_path)
-
 
                         if should_run_vis: #TODO: When move to functions, add it along the validation process
                             model.eval()
