@@ -22,7 +22,7 @@ logging.basicConfig(level = logging.DEBUG)
 
 #build import for different modules
 from datasets.registry import build_dataloader
-from models.registry import build_baseline
+from models.build_model import baseline
 
 def pprint_seconds(seconds):
     hours = seconds // 3600
@@ -55,7 +55,7 @@ def visualizaton(model, device, data_loader):
 
             wandb.log({"validate Predictions":[wandb.Image(image) for image in images]})
 
-            break #break the loop after vis. predict. for 6 images  
+            break 
 
 def validate(model, device, data_loader, loss_f, cfg):
     model.eval()         
@@ -78,7 +78,6 @@ def validate(model, device, data_loader, loss_f, cfg):
             
             val_pred.extend(pred_out_list)
             
-            ## TODO: Verify if test split has seg_masks only then validation loss needs to be calculated
             val_seg_loss = loss_f(F.log_softmax(val_seg_out, dim =1), val_gt_mask.long())
 
             val_batch_loss = val_seg_loss.detach().cpu()/cfg.batch_size
@@ -107,7 +106,7 @@ def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, 
     for itr, data in enumerate(train_loader): 
         model.train()
 
-        #TODO: correct batch_loading time when make functions
+        #TODO: correct batch_loading time 
         batch_load_time = multitimings.end('batch_load')
         print(f"Got new batch: {batch_load_time:.2f}s - training iteration: {itr}")
     
@@ -255,31 +254,11 @@ if __name__ == "__main__":
         #Integrate with wandb including model visulization (Done)
         #checkpoint dirs (Done)
         #model.train() and model.eval() (Done)
-        #Make functions for trian, eval and vis 
-        #Verify if training is correct (as training loss is not improving in initial runs)
+        #Make functions for trian, eval and vis (Done) 
+        #Verify if training is correct (as training loss is not improving in initial runs) (Done)
 
-    """ model defination TODO: add to build function"""
-    def reinitialize_weights(layer_weight):
-        torch.nn.init.xavier_uniform_(layer_weight)
-
-    model = build_baseline(cfg.net, cfg)
+    model = baseline(cfg)
     model = model.to(device)
-    
-    
-        
-    #TODO: enable it only for baseline 
-    #reinitialize model weights
-    for name, layer in model.named_modules():
-        if isinstance(layer,torch.nn.Conv2d):
-            reinitialize_weights(layer.weight)
-            try: 
-                layer.bias.data.fill_(0.01)  
-            except: ## TODO: Verify one layers bias is NONE? 
-                pass 
-            
-        elif isinstance(layer, torch.nn.Linear):
-            reinitialize_weights(layer.weight)
-            layer.bias.data.fill_(0.01)
     
     wandb.watch(model)
 
