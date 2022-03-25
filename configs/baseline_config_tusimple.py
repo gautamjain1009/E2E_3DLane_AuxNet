@@ -71,8 +71,8 @@ net = dict(
 ###logging params
 date_it = "20_March_" #TODO: remove it from argparse
 train_run_name = "baseline_2dLane" + date_it
-val_frequency = 200
-train_log_frequency = 10
+val_frequency = 100
+train_log_frequency = 200
 
 #Hyperparams
 epochs = 100

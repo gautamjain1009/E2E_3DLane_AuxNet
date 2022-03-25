@@ -11,9 +11,9 @@ from scipy.interpolate import InterpolatedUnivariateSpline
 import numpy as np
 
 """
-This class in general will take the model output TODO: further extend it to lane_exist approach
+This class in general will take the model output TODO: further extend it to lane_exist approach 
 """
-#steps I need to carry out to make the inference or visualization possible 
+#steps to carry out to make the inference or visualization possible 
 # preprocesing and model inference will be done in the train loop
 # 1. Image Preprocessing as per the model trianined on via config 
 # 2. Convert the probability maps to lane points in the image space
@@ -68,7 +68,6 @@ class LaneVisualisation(object):
         self.cfg = cfg
 
     def get_lanes(self, output):
-        print("checking the keys of the prediction", output.keys())
 
         segs = output['seg']
         segs = F.softmax(segs, dim=1)
