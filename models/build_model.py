@@ -4,9 +4,10 @@ import torch
 def reinitialize_weights(layer_weight):
     torch.nn.init.xavier_uniform_(layer_weight)
 
-def baseline(cfg): 
+def load_model(cfg): 
     model = build_baseline(cfg.net, cfg)
 
+    ##TODO: add condition for baseline
       #reinitialize model weights
     for name, layer in model.named_modules():
         if isinstance(layer,torch.nn.Conv2d):

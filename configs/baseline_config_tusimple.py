@@ -1,6 +1,8 @@
 """
 Dataloader params
 """
+
+#TODO: Mya be the mean and std values are not correct for the dataset
 img_norm = dict(
     mean=[103.939, 116.779, 123.68],
     std=[1., 1., 1.]
@@ -69,9 +71,9 @@ net = dict(
 )
 
 ###logging params
-date_it = "20_March_" #TODO: remove it from argparse
+date_it = "25_March_" #TODO: remove it from argparse
 train_run_name = "baseline_2dLane" + date_it
-val_frequency = 100
+val_frequency = 400
 train_log_frequency = 200
 
 #Hyperparams

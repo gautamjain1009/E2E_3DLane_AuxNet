@@ -22,7 +22,7 @@ logging.basicConfig(level = logging.DEBUG)
 
 #build import for different modules
 from datasets.registry import build_dataloader
-from models.build_model import baseline
+from models.build_model import load_model
 
 def pprint_seconds(seconds):
     hours = seconds // 3600
@@ -210,7 +210,6 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='2D Lane detection')
     parser.add_argument('--config', help = 'path of train config file')
-    parser.add_argument("--date_it", type=str, required=True, help="run date/name")  # "16Jan_1_seg"
     parser.add_argument("--no_wandb", dest="no_wandb", action="store_true", help="disable wandb")
     parser.add_argument("--seed", type=int, default=27, help="random seed")
 
@@ -245,19 +244,7 @@ if __name__ == "__main__":
     print("===> batches in train loader", train_loader_len)
     print("===> batches in val loader", val_loader_len)
     
-    #TODO:
-        #loss functions (Done)
-        # scheduler and optimizer (Done) 
-        #idea for test loop and how the evaluation is carried out (Done)
-        #trian loop /Eval loop (Done)
-        #add timmings (Done)
-        #Integrate with wandb including model visulization (Done)
-        #checkpoint dirs (Done)
-        #model.train() and model.eval() (Done)
-        #Make functions for trian, eval and vis (Done) 
-        #Verify if training is correct (as training loss is not improving in initial runs) (Done)
-
-    model = baseline(cfg)
+    model = load_model(cfg)
     model = model.to(device)
     
     wandb.watch(model)
@@ -277,6 +264,7 @@ if __name__ == "__main__":
         for arg in vars(args):
             wandb.config.update({arg: getattr(args, arg)})
             print(arg, getattr(args, arg))
+        
         #for speedup
         with torch.autograd.profiler.profile(enabled=False):
             with torch.autograd.profiler.emit_nvtx(enabled=False, record_shapes=False):

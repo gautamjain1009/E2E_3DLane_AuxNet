@@ -72,10 +72,7 @@ class TusimpleLoader(Dataset):
         
         if self.split == 'train' or 'trainval':
             random.shuffle(self.data)
-    
-    """"
-    Needs to be tested (TO be used for eval metrics)
-    # """
+            
     def pred2lanes(self, pred):
         ys = np.array(self.h_samples) / self.cfg.ori_img_h
         lanes = []
