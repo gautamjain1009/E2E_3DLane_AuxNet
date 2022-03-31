@@ -1,8 +1,7 @@
 ## this script will load different variants of Resnet backbone
-## and return the backbone
 
 """
-Below code is modified from pytorch/vision/model/resnet.py
+Below code is modified from https://github.com/pytorch/vision/blob/main/torchvision/models/resnet.py
 """
 
 import torch
@@ -10,7 +9,7 @@ from torch import nn
 import torch.nn.functional as F
 from torch.hub import load_state_dict_from_url
 
-## import to build model
+from ..registry import BACKBONES
 
 model_urls = {
     'resnet18': 'https://download.pytorch.org/models/resnet18-5c106cde.pth',
@@ -121,23 +120,23 @@ class Bottleneck(nn.Module):
         return out
 
 
-# @BACKBONES.register_module
+@BACKBONES.register_module
 class ResNetWrapper(nn.Module):
 
     def __init__(self, 
-                resnet = 'resnet18',
+                resnet_variant = 'resnet18',
                 pretrained=True,
                 replace_stride_with_dilation=[False, False, False],
                 out_conv=False,
-                fea_stride=8,
                 out_channel=128,
                 in_channels=[64, 128, 256, 512],
-                cfg=None):
+                cfg=None,
+                featuremap_out_channel=None):
         super(ResNetWrapper, self).__init__()
         self.cfg = cfg
         self.in_channels = in_channels 
 
-        self.model = eval(resnet)(
+        self.model = eval(resnet_variant)(
             pretrained=pretrained,
             replace_stride_with_dilation=replace_stride_with_dilation, in_channels=self.in_channels)
         self.out = None
@@ -148,7 +147,7 @@ class ResNetWrapper(nn.Module):
                 out_channel = chan
                 break
             self.out = conv1x1(
-                out_channel * self.model.expansion, cfg.featuremap_out_channel)
+                out_channel * self.model.expansion, featuremap_out_channel)
 
     def forward(self, x):
         x = self.model(x)
@@ -173,6 +172,8 @@ class ResNet(nn.Module):
             # each element in the tuple indicates if we should replace
             # the 2x2 stride with a dilated convolution instead
             replace_stride_with_dilation = [False, False, False]
+        
+        #upsampling of feature maps
         if len(replace_stride_with_dilation) != 3:
             raise ValueError("replace_stride_with_dilation should be None "
                              "or a 3-element tuple, got {}".format(replace_stride_with_dilation))

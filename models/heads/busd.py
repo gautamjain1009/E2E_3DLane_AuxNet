@@ -8,7 +8,8 @@ from torch import nn
 import torch.nn.functional as F
 from torch.hub import load_state_dict_from_url
 
-# from ..registry import HEADS
+from ..registry import HEADS
+
 def conv1x1(in_planes, out_planes, stride=1):
     """1x1 convolution"""
     return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
@@ -87,11 +88,12 @@ class UpsamplerBlock(nn.Module):
 
         interpolate = F.interpolate(interpolate_output, size=[self.up_height,  self.up_width],
                                     mode='bilinear', align_corners=False)
-
         return out + interpolate
 
-# @HEADS.register_module
+
 #TODO: add BUSD with lane exist model
+
+@HEADS.register_module
 class BUSD(nn.Module):
     def __init__(self, cfg):
         super().__init__()
@@ -112,11 +114,7 @@ class BUSD(nn.Module):
 
     def forward(self, input):
         output = input
-
         for layer in self.layers:
             output = layer(output)
-
         output = self.output_conv(output)
-        output = {'seg': output}
-
         return output

@@ -6,9 +6,9 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-# from ..registry import HEADS
+from ..registry import HEADS
 
-# @HEADS.register_module
+@HEADS.register_module
 class PlainDecoder(nn.Module):
     def __init__(self, cfg):
         super(PlainDecoder, self).__init__()
@@ -21,9 +21,10 @@ class PlainDecoder(nn.Module):
 
         x = self.dropout(x)
         x = self.conv8(x)
-        x = F.interpolate(x, size=[self.cfg.img_height,  self.cfg.img_width],
-                           mode='bilinear', align_corners=False)
 
-        output = {'seg': x}
+        ## F.interpolate and nn.Upsample are the same thing for upsampling but both classes are designed
+        # for different use cases or one of them is depriciated.
+        output = F.interpolate(x, size=[self.cfg.img_height,  self.cfg.img_width],
+                           mode='bilinear', align_corners=False)
 
         return output 

@@ -212,13 +212,14 @@ if __name__ == "__main__":
     parser.add_argument('--config', help = 'path of train config file')
     parser.add_argument("--no_wandb", dest="no_wandb", action="store_true", help="disable wandb")
     parser.add_argument("--seed", type=int, default=27, help="random seed")
-
+    parser.add_argument("--baseline", type=bool, default=False, help="enable baseline")
+   
     #parsing args
     args = parser.parse_args()
 
     #parasing config file
     cfg = Config.fromfile(args.config)
-
+    
     #init vis class
     vis = LaneVisualisation(cfg)
 
@@ -244,7 +245,7 @@ if __name__ == "__main__":
     print("===> batches in train loader", train_loader_len)
     print("===> batches in val loader", val_loader_len)
     
-    model = load_model(cfg)
+    model = load_model(cfg, baseline = args.baseline)
     model = model.to(device)
     
     wandb.watch(model)
@@ -259,6 +260,8 @@ if __name__ == "__main__":
     scheduler = topt.lr_scheduler.ReduceLROnPlateau(optimizer, factor= cfg.lrs_factor, patience= cfg.lrs_patience,
                                                         threshold= cfg.lrs_thresh, verbose=True, min_lr= cfg.lrs_min,
                                                         cooldown=cfg.lrs_cd)                               
+    
+    #TODO: Add a condition for model to be loaded from pretrained model if needed only for inference
     with run:
         print("==> Reporting Argeparse params")
         for arg in vars(args):

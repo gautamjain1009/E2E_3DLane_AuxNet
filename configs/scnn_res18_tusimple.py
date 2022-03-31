@@ -1,8 +1,10 @@
+
+#TODO: Optimize this config
 """
 Dataloader params
 """
 
-#TODO: May be the mean and std values are not correct for the dataset
+#TODO: Mya be the mean and std values are not correct for the dataset
 img_norm = dict(
     mean=[103.939, 116.779, 123.68],
     std=[1., 1., 1.]
@@ -64,15 +66,26 @@ num_classes = 6 + 1
 
 test_json_file='/home/gautam/e2e/lane_detection/2d_approaches/dataset/tusimple/test_label.json'
 
-net = dict(
-    type='ERFNet',
-    num_classes = num_classes,
-    exist_head = False # valid only for CUlane
-)
+"""
+model params
+"""
+featuremap_out_channel = 128
+backbone = dict(
+    type='ResNetWrapper',
+    resnet_variant='resnet50',
+    pretrained=True,
+    replace_stride_with_dilation=[False, True, False],
+    out_conv=True,
+    in_channels=[64, 128, 256, -1],
+    featuremap_out_channel = 128)
+
+aggregator = dict(type= "SCNN")
+
+heads = dict(type = 'PlainDecoder')
 
 ###logging params
-date_it = "25_March_" #TODO: remove it from argparse
-train_run_name = "baseline_2dLane" + date_it
+date_it = "25_March_"
+train_run_name = "r18_scnn_pdec_2dLane" + date_it
 val_frequency = 400
 train_log_frequency = 200
 
