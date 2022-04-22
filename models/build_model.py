@@ -17,6 +17,7 @@ class CombinedModel(nn.Module):
 
     def forward(self, x):
         x = self.backbone(x) # list of tensors
+        # print("check the shape of the last feature map: ", x[-1].shape)
         x = self.aggregator(x[-1])
         x = self.heads(x)
         return x

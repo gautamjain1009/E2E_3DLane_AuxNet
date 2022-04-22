@@ -1,6 +1,6 @@
 from .baseline_model import ERFNet
 
-from .backbones import resnet
+from .backbones import resnet, senet
 from .feature_aggregataor import scnn_module, resa
 from .heads import plain_decoder, busd
 

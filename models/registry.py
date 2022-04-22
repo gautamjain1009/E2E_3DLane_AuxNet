@@ -20,6 +20,7 @@ def build_baseline(split_cfg, cfg):
     return build(split_cfg, BASELINE)
 
 def build_backbone(cfg):
+    print(BACKBONES)
     split_cfg = cfg.backbone
     return build(split_cfg, BACKBONES)
 

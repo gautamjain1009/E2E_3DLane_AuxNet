@@ -71,13 +71,7 @@ model params
 """
 featuremap_out_channel = 128
 backbone = dict(
-    type='ResNetWrapper',
-    resnet_variant='resnet18',
-    pretrained=True,
-    replace_stride_with_dilation=[False, True, False],
-    out_conv=True,
-    in_channels=[64, 128, 256, -1],
-    featuremap_out_channel = 128)
+    type='SENet')
 
 aggregator = dict(type= "SCNN")
 

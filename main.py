@@ -1,3 +1,5 @@
+#TODO: Change the name of the script to 2D_lane_detection_train.py
+
 from pprint import pprint
 import torch 
 import cv2 
@@ -247,7 +249,12 @@ if __name__ == "__main__":
     
     model = load_model(cfg, baseline = args.baseline)
     model = model.to(device)
-    
+    # # print(model)
+    # a =torch.rand(1,3,512,512)
+    # a = a.to(device)
+    # out = model(a)
+    # print(out.shape)
+
     wandb.watch(model)
 
     #segmentation loss
@@ -263,7 +270,7 @@ if __name__ == "__main__":
     
     #TODO: Add a condition for model to be loaded from pretrained model if needed only for inference
     with run:
-        print("==> Reporting Argeparse params")
+        print("==> Reporting Argparse params")
         for arg in vars(args):
             wandb.config.update({arg: getattr(args, arg)})
             print(arg, getattr(args, arg))
