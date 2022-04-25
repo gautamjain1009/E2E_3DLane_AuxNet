@@ -5,7 +5,8 @@ import scipy
 import os 
 import glob
 import random
-from torch import get_file_path
+
+import torchvision.transforms as transforms
 from torch.utils.data import Dataset, DataLoader
 import logging 
 logging.basicConfig(level = logging.DEBUG)
@@ -44,9 +45,11 @@ class Apollo3d_loader(Dataset):
         self.cfg = cfg
         self.args = args 
         
+        if phase == "train":
+            self.data_filepath = os.path.join(self.data_splits, "train.json")
+        else :
+            self.data_filepath = os.path.join(self.data_splits, "test.json")
         
-        #TODO: separte the initilization of the data_split
-        self.gt_filepath = os.path.join(self.data_splits, "test.json")
         self.load_dataset()
         
         """
@@ -61,29 +64,21 @@ class Apollo3d_loader(Dataset):
             if augment the data?? update the projection matrix
             top view region 
         """
-
     def load_dataset(self):
+
+        if not os.path.exists(self.data_filepath):
+            raise Exception('Fail to load the train.json file')
+
+        #loading data from the json file
+        json_data = [json.loads(line) for line in open(self.data_filepath).readlines()]
         
-        #NOTE: the splits mentioned on the Geonet may be less than the original dataset
-        print("check if gt file path is correct",self.gt_filepath)
-        print(os.path.exists(self.gt_filepath))
+        #extract image keys from the json file
+        self.image_keys = [data['raw_file'] for data in json_data]
 
-        lines = []
-        # assert ops.exists(json_file_path), '{:s} not exist'.format(json_file_path)
-        with open(self.gt_filepath) as f:
-            lines_i = f.readlines()
-            # print(lines_i)
-        f.close()
-        lines = lines + lines_i
-
-        print("length of lines",len(lines))
-
-
-        
-        
+        self.data = {l['raw_file']: l for l in json_data}
 
     #to calculate angle and offsets
-    def houghLine(self, image):
+    def HoughLine(self, image):
         ''' Basic Hough line transform that builds the accumulator array
         Input : image tile (gray scale image)
         Output : accumulator : the accumulator of hough space
@@ -127,12 +122,53 @@ class Apollo3d_loader(Dataset):
         return accumulator, thetas, rs
 
     def __len__(self):
-        pass 
+        return len(self.image_keys)
 
 
     def __getitem__(self, idx):
-        pass
 
+        batch = {}
+
+        gtdata = self.data[self.image_keys[idx]]
+        img_path = os.path.join(self.data_root, gtdata['raw_file'])
+        
+        if not os.path.exists(img_path):
+            raise FileNotFoundError('cannot find file: {}'.format(img_path))
+
+        img = cv2.imread(img_path)
+
+        gt_camera_height = gtdata['cam_height'] 
+        gt_camera_pitch =gtdata['cam_pitch']
+
+        batch.update({"gt_height":gt_camera_height})
+        batch.update({"gt_pitch":gt_camera_pitch})
+        
+        #TODO: correct the data representation of lanelines
+        gt_lanelines = gtdata['laneLines']
+        batch.update({'gt_lanelines':gt_lanelines})
+ 
+        #TODO: add transforms and update the other data accordingly
+        #convert the image to tensor
+        img = transforms.ToTensor()(img)
+        img = img.float()
+        batch.update({"image":img})
+        
+        # return img, gt_camera_height, gt_camera_pitch, gt_lanelines
+        return batch
+        
+def collate_fn(batch):
+    """
+    This function is used to collate the data for the dataloader
+    """
+    
+    img_data = [item['image'] for item in batch]
+    img_data = torch.stack(img_data, dim = 0)
+    
+    gt_camera_height_data = [item[1] for item in batch]
+    gt_camera_pitch_data = [item[2] for item in batch]
+    gt_lanelines_data = [item[3] for item in batch] #need to check the data representation of lanelines (vis)
+
+    return [img_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data]
 
 # import re
 # import numpy as np 
@@ -142,7 +178,7 @@ class Apollo3d_loader(Dataset):
 
 # def deg2rad(angle):
 #     #convert angle from degree to radian
-#     a = (np.pi / 180) 
+#     a = (np.pi / 180) s
 #     b = angle * a
 #     return b 
 # def calprob(n_bin, angle):
@@ -169,4 +205,20 @@ if __name__ == "__main__":
     camera_intrinsics = np.array([[1280, 0, 640], [0, 1280, 360], [0, 0, 1]])
 
     dataset = Apollo3d_loader(camera_intrinsics, data_root, data_splits)
-
+    loader = DataLoader(dataset, batch_size=2, shuffle=True, num_workers=4, collate_fn=collate_fn)
+    
+    # loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=4)
+    
+    for i, data in enumerate(loader):
+        # print(data.keys())
+        # print(data['image'].size())
+        # print(data['gt_lanelines'].size())
+        # print(data['gt_height'])
+        # print(data['gt_pitch'])
+        # print(data[0].shape)
+        # print(data[1])
+        # print(data[2])
+        print(len(data[3][0][1]))## index ,batch_size, i == lane_cnt, data_points
+        break
+        # print(data)
+        # print(i)
