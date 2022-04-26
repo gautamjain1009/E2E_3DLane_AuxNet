@@ -12,26 +12,6 @@ import logging
 logging.basicConfig(level = logging.DEBUG)
 import json 
 
-""""
-TODO: To decide the shape of the feature vectors as per the pipeline and decisions for the shape of the target tensors as per the loss functions
-Dataloader design  
-1. Image of the scene 
-2. Read the json file for train.json from the data splits and carry out the projections for bev space.
-3. Extract camera height putch 
-
-
-What this dataloader is spitting: 
-1. Image of the scene
-2. Gt camera_height, camera_pitch 
-3. A Tensor with Rho, delta Z, classification score for each tile in the image. 
-4. For phis I need to convert the angle values into a probability vector after the softmax. 
-
-Phi: [batch_size, N-tiles, 10]
-rho: [batch_size, N-tiles, 1]
-delta_z: [batch_size, N-tiles, 1]
-classidity_score: [batch_size, N-tiles, 1] or may be [batch_size, N-tiles, 2] as per the loss function used
-"""
-
 #helper function later to add in the utils.py responsible for the projection 
 def homography_crop_resize(org_img_size, crop_y, resize_img_size):
     """
@@ -137,24 +117,29 @@ def deg2rad(angle):
 
     return b 
 
-def calprob(n_bin, angle):
+def binprob(n_bin, angle, d2rad = False):
     
-    """TODO: add softmax to conver to normalise
-
+    """
     helper function to generate the bin prob vector
     (phi) from line angle for each tile
     
     """
-
-    constant = 2*np.pi/10
-    rad_angle = deg2rad(angle)
-    print("rad angle",rad_angle)
-    print("printing abs value",abs((constant * n_bin)- rad_angle))
-    print("again", abs((constant * n_bin)- rad_angle)/constant)
-    # print("checking one more value",1- ((constant * n_bin) - rad_angle)/10)
-    formula = 1 - abs((constant * n_bin) - rad_angle)/constant
+    constant = 2*np.pi/n_bin
     
-    return formula 
+    if d2rad == True: 
+        rad_angle = deg2rad(angle)
+    else:
+        rad_angle = angle
+
+    bin_vector = np.zeros((n_bin, 1))
+    
+    for i in range(n_bin):
+        p_aplha = 1 - (abs((constant * i) - rad_angle)/constant)
+        bin_vector[i] = p_aplha
+
+    bin_vector[bin_vector<0] = 0
+
+    return bin_vector 
 
 def HoughLine(image):
         ''' Basic Hough line transform that builds the accumulator array
@@ -163,6 +148,7 @@ def HoughLine(image):
                 thetas : values of theta (0 : 360)
                 rs : values of radius (-max distance : max distance)
         '''
+        lane_exist = False
 
         #Get image dimensions
         # y for rows and x for columns 
@@ -180,13 +166,14 @@ def HoughLine(image):
 
         #Create accumulator array and initialize to zero
         accumulator = np.zeros((2 * Maxdist, len(thetas)))
-
+         
         # Loop for each edge pixel
         for y in range(Ny):
             for x in range(Nx):
                 # Check if it is an edge pixel
                 #  NB: y -> rows , x -> columns
                 if image[y,x] > 0:
+                    lane_exist = True
                     #Loop for each theta
                     # Map edge pixel to hough space
                     for k in range(len(thetas)):
@@ -197,7 +184,7 @@ def HoughLine(image):
                         # N.B: r has value -max to max
                         # map r to its idx 0 : 2*max
                         accumulator[int(r) + Maxdist,k] += 1
-        return accumulator, thetas, rs
+        return accumulator, thetas, rs, lane_exist
 
 class CalculateDistanceAngleOffests(object):
     def __init__(self, org_h, org_w, K, ipm_w, ipm_h, crop_y, top_view_region):
@@ -206,8 +193,12 @@ class CalculateDistanceAngleOffests(object):
         self.max_y = 80
         
         self.K = K
+        
+        self.crop_y = crop_y
+        self.top_view_region = top_view_region
+
         """
-            this visualizer use higher resolution than network input for better look
+            TODO: change the org_h and org_w according to feature map size in the network
         """
         self.resize_h = org_h
         self.resize_w = org_w
@@ -220,13 +211,13 @@ class CalculateDistanceAngleOffests(object):
         
         #TODO: check the defination of these variables org_h, org_w, ipm_w, ipm_h etc. in terms of class variables
 
-        self.H_crop = homography_crop_resize([org_h, org_w], crop_y, [self.resize_h, self.resize_w])
+        self.H_crop = homography_crop_resize([org_h, org_w], self.crop_y, [self.resize_h, self.resize_w])
         # transformation from ipm to ground region
         self.H_ipm2g = cv2.getPerspectiveTransform(np.float32([[0, 0],
                                                               [self.ipm_w-1, 0],
                                                               [0, self.ipm_h-1],
                                                               [self.ipm_w-1, self.ipm_h-1]]),
-                                                   np.float32(top_view_region))
+                                                   np.float32(self.top_view_region))
         self.H_g2ipm = np.linalg.inv(self.H_ipm2g)
 
         self.x_min = top_view_region[0, 0]
@@ -235,21 +226,20 @@ class CalculateDistanceAngleOffests(object):
         # self.y_samples = np.linspace(args.anchor_y_steps[0], args.anchor_y_steps[-1], num=100, endpoint=False)
         self.y_samples = np.linspace(self.min_y, self.max_y, num=100, endpoint=False)
 
-    def draw_bevlanes(self, gt_lanes, raw_file, gt_cam_height, gt_cam_pitch):
+    def draw_bevlanes(self, gt_lanes, img, gt_cam_height, gt_cam_pitch):
+        
         P_g2im = projection_g2im(gt_cam_pitch, gt_cam_height, self.K)
         # P_gt = P_g2im
         P_gt = np.matmul(self.H_crop, P_g2im)
+
         H_g2im = homograpthy_g2im(gt_cam_pitch, gt_cam_height, self.K)
         H_im2ipm = np.linalg.inv(np.matmul(self.H_crop, np.matmul(H_g2im, self.H_ipm2g)))
 
-        # print(self.dataset_dir)
-        # print(raw_file)
-
-        img = cv2.imread(ops.join(self.dataset_dir, raw_file))
-        print("Checking the shape of original image: ", img.shape)
+        # print("Checking the shape of original image: ", img.shape)
 
         img = cv2.warpPerspective(img, self.H_crop, (self.resize_w, self.resize_h))
-        print("Checking the shape of cropped image: ", img.shape)     
+        # print("Checking the shape of cropped image: ", img.shape)     
+
         # img = img.astype(np.float) / 255
         # cv2.imwrite("/home/gautam/e2e/lane_detection/3d_approaches/Pytorch_Generalized_3D_Lane_Detection/tools/test1.jpg", img) #normalized
         im_ipm = cv2.warpPerspective(img, H_im2ipm, (self.ipm_w, self.ipm_h))
@@ -280,9 +270,9 @@ class CalculateDistanceAngleOffests(object):
 
         flag = False
 
-        # cv2.imwrite("/home/gautam/e2e/lane_detection/3d_approaches/Pytorch_Generalized_3D_Lane_Detection/tools/vis_test.jpg", im_ipm)
+        # cv2.imwrite("/home/gautam/Thesis/E2E_3DLane_AuxNet/datasets/viss_test.jpg", im_ipm)
+        
         # draw gt lanes
-        color = [0, 0, 1]
         dummy_image = im_ipm.copy()
         dummy_image[:,:,:] = 0
 
@@ -317,26 +307,77 @@ class CalculateDistanceAngleOffests(object):
                     dummy_image = cv2.line(dummy_image, (x_ipm_values[k - 1], y_ipm_values[k - 1]),
                                         (x_ipm_values[k], y_ipm_values[k]), (255,0,0), 1)
 
-        # cv2.imwrite("/home/gautam/e2e/lane_detection/3d_approaches/Pytorch_Generalized_3D_Lane_Detection/tools/image_space_test.jpg" ,img )
-        # cv2.imwrite("/home/gautam/e2e/lane_detection/3d_approaches/Pytorch_Generalized_3D_Lane_Detection/tools/complete_lines_test.jpg" , dummy_image)
         return dummy_image
 
-def generategt_pertile(n_tiles):
+#TODO: Rho values are all negative for some reason verify it is correct
+def generategt_pertile(tile_size, gt_lanes, img , gt_cam_height, gt_cam_pitch):
     
-    """
-    TODO:Describe the shapes here after they are finalized in the implementation
+    # n_tiles will be deifned as the number of tiles needed as per the size of the last feature map after bev encoder
 
+    """
     The gt lanes are plotted in BEV and decimated into tiles of the repective size
     Helper function that will return the gt 
-        regression targets: rho_ij, phi_ij #
+        regression targets: rho_ij, phi_ij 
         classification score per tile : c_ij
+
+    return: gt_rho --> [batch_size, ipm_h/tile_size, ipm_w/tile_size]
+            gt_phi --> [batch_size, n_bins, ipm_h/tile_size, ipm_w/tile_size]
+            gt_c --> [batch_size, ipm_h/tile_size, ipm_w/tile_size]
     """
+    camera_intrinsics = np.array([[2015., 0., 960.],
+                       [0., 2015., 540.],
+                       [0., 0., 1.]])
+    #TODO: Add the harcoded params into the config file
+    #TODO: modify the top view region
+    top_view_region = np.array([[-10, 103], [10, 103], [-10, 3], [10, 3]])
+    org_h = 1080
+    org_w = 1920
+    crop_y = 0
+    ipm_w = 128
+    ipm_h = 208
+    n_bins = 10 
 
-    pass 
-    # return rho, phi, cls_score 
+    #init the bev projection class
+    calculate_bev_projection = CalculateDistanceAngleOffests(org_h, org_w, camera_intrinsics, ipm_w, ipm_h, crop_y, top_view_region)
+    
+    bev_projected_lanes = calculate_bev_projection.draw_bevlanes(gt_lanes, img , gt_cam_height, gt_cam_pitch) ## returns an image array of gt lanes projected on BEV
+
+    # print("BEV projected lanes shape: ", bev_projected_lanes.shape)
+    # cv2.imwrite("/home/gautam/Thesis/E2E_3DLane_AuxNet/datasets/complete_lines_test.jpg" , bev_projected_lanes)
+
+    ##init gt arrays for rho, phi and classification score
+    gt_rho = np.zeros((int(bev_projected_lanes.shape[0]/tile_size), int(bev_projected_lanes.shape[1]/tile_size)))
+    gt_phi = np.zeros((n_bins, int(bev_projected_lanes.shape[0]/tile_size), int(bev_projected_lanes.shape[1]/tile_size)))
+    gt_c = np.zeros((int(bev_projected_lanes.shape[0]/tile_size), int(bev_projected_lanes.shape[1]/tile_size)))
+    
+    ## TODO: Enable for multiple batches
+    bev_projected_lanes = bev_projected_lanes[:,:,0]
+    for r in range(0,bev_projected_lanes.shape[0],tile_size): ### i === 13 times
+        for c in range(0,bev_projected_lanes.shape[1],tile_size): ### j == 8 times
+            # cv2.imwrite(f"/home/gautam/Thesis/E2E_3DLane_AuxNet/datasets/test/img{r}_{c}.png",bev_projected_lanes[r:r+32, c:c+32])
+            tile_img = bev_projected_lanes[r:r+32, c:c+32]
+            
+            accumulator, thetas, rhos, lane_exist = HoughLine(tile_img)
+            idx = np.argmax(accumulator)
+            rho = int(rhos[int(idx / accumulator.shape[1])])
+            theta = thetas[int(idx % accumulator.shape[1])] #radians
+
+            x_idx = int(r/tile_size)
+            y_idx = int(c/tile_size)
+            gt_rho[x_idx,y_idx] = rho
+    
+            phi_vec = binprob(n_bins, theta)
+            gt_phi[:,x_idx,y_idx][:, np.newaxis] = phi_vec
+
+            if lane_exist == True:
+                gt_c[x_idx,y_idx] = 1
+            else:
+                gt_c[x_idx,y_idx] = 0
+                
+    return gt_rho, gt_phi, gt_c
 
 
-#create a pytorch dataset class
+#TODO: add data augmentation as per the GeoNet paper
 class Apollo3d_loader(Dataset):
     def __init__(self, camera_intrinsics, data_root, data_splits, phase = "train", transform = False, cfg = None, args = None):
         super(Apollo3d_loader, self,).__init__()
@@ -356,21 +397,9 @@ class Apollo3d_loader(Dataset):
         
         self.load_dataset()
         
-        """
-        TODO: Things I need to add in the args:: for this dataloader
-            
-            original image height 
-            original image width
-            ipm_width
-            ipm_height
-            camera intrinsics
-            crop region for the imgae
-            if augment the data?? update the projection matrix
-            top view region 
-        """
     def load_dataset(self):
 
-        #TODO: Make it more efficient 
+        #TODO: Make it more efficient
         if not os.path.exists(self.data_filepath):
             raise Exception('Fail to load the train.json file')
 
@@ -381,12 +410,9 @@ class Apollo3d_loader(Dataset):
         self.image_keys = [data['raw_file'] for data in json_data]
 
         self.data = {l['raw_file']: l for l in json_data}
-
-    #to calculate angle and offsets
     
     def __len__(self):
         return len(self.image_keys)
-
 
     def __getitem__(self, idx):
 
@@ -399,11 +425,6 @@ class Apollo3d_loader(Dataset):
             raise FileNotFoundError('cannot find file: {}'.format(img_path))
 
         img = cv2.imread(img_path)
-        """
-        Around here I need to calculate the angle and distance offests for the tiles
-        """
-
-        rho, phi, cls_score = generategt_pertile()
 
         gt_camera_height = gtdata['cam_height'] 
         gt_camera_pitch =gtdata['cam_pitch']
@@ -411,40 +432,43 @@ class Apollo3d_loader(Dataset):
         batch.update({"gt_height":gt_camera_height})
         batch.update({"gt_pitch":gt_camera_pitch})
         
-        #TODO: correct the data representation of lanelines
+        #TODO: correct the data representation while in the need of visulization
         gt_lanelines = gtdata['laneLines']
         batch.update({'gt_lanelines':gt_lanelines})
- 
+
+        gt_lateral_offset, gt_lateral_angleoffset, gt_cls_score= generategt_pertile(32, gt_lanelines, img, gt_camera_height, gt_camera_pitch)
+
+        batch.update({'gt_rho':torch.from_numpy(gt_lateral_offset)})
+        batch.update({'gt_phi':torch.from_numpy(gt_lateral_angleoffset)})
+        batch.update({'gt_clscore':torch.from_numpy(gt_cls_score)})
+
         #TODO: add transforms and update the other data accordingly
         
         #convert the image to tensor
         img = transforms.ToTensor()(img)
         img = img.float()
         batch.update({"image":img})
-        
-        # return img, gt_camera_height, gt_camera_pitch, gt_lanelines
-
-
-        """
-        TODO: Other Inputs I need to add here except than that,
-
-
-        """
+    
         return batch
         
 def collate_fn(batch):
     """
     This function is used to collate the data for the dataloader
     """
-    
+    #TODO: add torch.stack for the other data
+
     img_data = [item['image'] for item in batch]
     img_data = torch.stack(img_data, dim = 0)
     
     gt_camera_height_data = [item['gt_height'] for item in batch]
     gt_camera_pitch_data = [item['gt_pitch'] for item in batch]
     gt_lanelines_data = [item['gt_lanelines'] for item in batch] #need to check the data representation of lanelines (vis)
+    gt_rho_data = [item['gt_rho'] for item in batch]
+    gt_phi_data = [item['gt_phi'] for item in batch]
+    gt_cls_score_data = [item['gt_clscore'] for item in batch]
 
-    return [img_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data]
+
+    return [img_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data]
 
 if __name__ == "__main__":
 
@@ -461,7 +485,7 @@ if __name__ == "__main__":
 
 
     dataset = Apollo3d_loader(camera_intrinsics, data_root, data_splits)
-    loader = DataLoader(dataset, batch_size=2, shuffle=True, num_workers=4, collate_fn=collate_fn)
+    loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=1, collate_fn=collate_fn)
     
     # loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=4)
     
@@ -475,6 +499,10 @@ if __name__ == "__main__":
         # print(data[1])
         # print(data[2])
         print(len(data[3][0][1]))## index ,batch_size, i == lane_cnt, data_points
+        # print(data[4].shape)
+        # print(data[5].shape)
+        print(len(data[6]))
+
         break
         # print(data)
         # print(i)
