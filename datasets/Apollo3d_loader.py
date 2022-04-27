@@ -198,7 +198,7 @@ class CalculateDistanceAngleOffests(object):
         self.top_view_region = top_view_region
 
         """
-            TODO: change the org_h and org_w according to feature map size in the network
+            TODO: change the org_h and org_w according to feature map size in the network may be top view region too
         """
         self.resize_h = org_h
         self.resize_w = org_w
@@ -455,17 +455,23 @@ def collate_fn(batch):
     """
     This function is used to collate the data for the dataloader
     """
-    #TODO: add torch.stack for the other data
 
     img_data = [item['image'] for item in batch]
     img_data = torch.stack(img_data, dim = 0)
     
+    #TODO: stack them in the form of tensors if needed
     gt_camera_height_data = [item['gt_height'] for item in batch]
     gt_camera_pitch_data = [item['gt_pitch'] for item in batch]
     gt_lanelines_data = [item['gt_lanelines'] for item in batch] #need to check the data representation of lanelines (vis)
+    
     gt_rho_data = [item['gt_rho'] for item in batch]
+    gt_rho_data = torch.stack(gt_rho_data, dim = 0)
+    
     gt_phi_data = [item['gt_phi'] for item in batch]
+    gt_phi_data = torch.stack(gt_phi_data, dim = 0)
+    
     gt_cls_score_data = [item['gt_clscore'] for item in batch]
+    gt_cls_score_data = torch.stack(gt_cls_score_data, dim = 0)
 
 
     return [img_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data]
@@ -485,24 +491,15 @@ if __name__ == "__main__":
 
 
     dataset = Apollo3d_loader(camera_intrinsics, data_root, data_splits)
-    loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=1, collate_fn=collate_fn)
+    loader = DataLoader(dataset, batch_size=6, shuffle=True, num_workers=4, collate_fn=collate_fn)
     
     # loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=4)
     
     for i, data in enumerate(loader):
-        # print(data.keys())
-        # print(data['image'].size())
-        # print(data['gt_lanelines'].size())
-        # print(data['gt_height'])
-        # print(data['gt_pitch'])
         print(data[0].shape)
-        # print(data[1])
-        # print(data[2])
-        print(len(data[3][0][1]))## index ,batch_size, i == lane_cnt, data_points
-        # print(data[4].shape)
-        # print(data[5].shape)
-        print(len(data[6]))
-
+        print(data[4].shape)
+        print(data[5].shape)
+        print(data[6].shape)
         break
         # print(data)
         # print(i)
