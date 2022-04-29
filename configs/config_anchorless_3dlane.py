@@ -1,3 +1,4 @@
+import numpy as np 
 
 # #TODO: Optimize this config
 # """
@@ -85,23 +86,44 @@ heads = dict(type = 'PlainDecoder')
 
 
 """
-3d model params (anchorless)
+3d model params (anchorless) for Apollo SIM3D dataset
 """
 
+org_h = 1080
+org_w = 1920
+crop_y = 0
+resize_h = 360 
+resize_w = 480
 
+ipm_h = 208
+ipm_w = 128
+#init camera height and pitch
+cam_height = 1.55
+pitch = 3 #degrees
 
+#camera instrinsics
+K = np.array([[2015., 0., 960.],
+                       [0., 2015., 540.],
+                       [0., 0., 1.]])
 
+top_view_region = np.array([[-10, 103], [10, 103], [-10, 3], [10, 3]])
+batch_norm = True #bev encoder
+"""""
+BIG BIG BIG NOTE: Is that the spatial size of ipm and BEV IPM projection are different?
 
+I think they need  to be the same for me to process the gt correctly.
+
+"""
 
 # ###logging params
 # date_it = "25_March_"
-# train_run_name = "r18_scnn_pdec_2dLane" + date_it
+# train_run_name = "Anchorless3DLane" + date_it
 # val_frequency = 400
 # train_log_frequency = 200
 
 # #Hyperparams
 # epochs = 100
-batch_size = 1 
+batch_size = 2
 # l2_lambda = 1e-4
 # log_frequency_steps = 200
 # lr = 0.001 

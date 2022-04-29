@@ -248,16 +248,9 @@ class CalculateDistanceAngleOffests(object):
 
         cnt_gt = len(gt_lanes)
         gt_visibility_mat = np.zeros((cnt_gt, 100))
-
-        # print(im_ipm.shape)
-        
-        # # print(cnt_gt)
-        
-        # resample gt and pred at y_samples
+                
+        # resample gt at y_samples
         for i in range(cnt_gt):
-            # # ATTENTION: ensure y mono increase before interpolation: but it can reduce size
-            # pred_lanes[i] = make_lane_y_mono_inc(np.array(pred_lanes[i]))
-            # pred_lane = prune_3d_lane_by_range(np.array(pred_lanes[i]), self.x_min, self.x_max)
             min_y = np.min(np.array(gt_lanes[i])[:, 1])
             max_y = np.max(np.array(gt_lanes[i])[:, 1])
             x_values, z_values, visibility_vec = resample_laneline_in_y(np.array(gt_lanes[i]), self.y_samples, out_vis=True)
@@ -270,9 +263,7 @@ class CalculateDistanceAngleOffests(object):
 
         flag = False
 
-        # cv2.imwrite("/home/gautam/Thesis/E2E_3DLane_AuxNet/datasets/viss_test.jpg", im_ipm)
-        
-        # draw gt lanes
+        # cv2.imwrite("/home/gautam/Thesis/E2E_3DLane_AuxNet/datasets/viss_test.jpg", im_ipm)        
         dummy_image = im_ipm.copy()
         dummy_image[:,:,:] = 0
 
@@ -292,13 +283,9 @@ class CalculateDistanceAngleOffests(object):
                 x_ipm_values = x_values
                 y_ipm_values = self.y_samples
 
-
             x_ipm_values, y_ipm_values = homographic_transformation(self.H_g2ipm, x_ipm_values[:100], y_ipm_values)
             x_ipm_values = x_ipm_values.astype(np.int)
             y_ipm_values = y_ipm_values.astype(np.int)
-            
-            # print(im_ipm.shape)
-            # print(x_ipm_values.shape[0])
 
             # draw on ipm
             for k in range(1, x_ipm_values.shape[0]):
@@ -342,7 +329,6 @@ def generategt_pertile(tile_size, gt_lanes, img , gt_cam_height, gt_cam_pitch):
     
     bev_projected_lanes = calculate_bev_projection.draw_bevlanes(gt_lanes, img , gt_cam_height, gt_cam_pitch) ## returns an image array of gt lanes projected on BEV
 
-    # print("BEV projected lanes shape: ", bev_projected_lanes.shape)
     # cv2.imwrite("/home/gautam/Thesis/E2E_3DLane_AuxNet/datasets/complete_lines_test.jpg" , bev_projected_lanes)
 
     ##init gt arrays for rho, phi and classification score
@@ -478,6 +464,7 @@ def collate_fn(batch):
 
 if __name__ == "__main__":
 
+    #unit test for the data loader
     #TODO: add the hardcoded arguments to config file later on
     data_root = '/home/gautam/e2e/lane_detection/3d_approaches/3d_dataset/Apollo_Sim_3D_Lane_Release'
     data_splits = '/home/gautam/e2e/lane_detection/3d_approaches/3d_dataset/3D_Lane_Synthetic_Dataset/old_data_splits/standard'
