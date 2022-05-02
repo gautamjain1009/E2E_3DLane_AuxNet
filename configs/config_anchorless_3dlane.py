@@ -88,15 +88,14 @@ heads = dict(type = 'PlainDecoder')
 """
 3d model params (anchorless) for Apollo SIM3D dataset
 """
-
 org_h = 1080
 org_w = 1920
 crop_y = 0
 resize_h = 360 
 resize_w = 480
 
-ipm_h = 208
-ipm_w = 128
+ipm_h = 208 * 2
+ipm_w = 128 * 2 
 #init camera height and pitch
 cam_height = 1.55
 pitch = 3 #degrees
@@ -108,11 +107,11 @@ K = np.array([[2015., 0., 960.],
 
 top_view_region = np.array([[-10, 103], [10, 103], [-10, 3], [10, 3]])
 batch_norm = True #bev encoder
+embedding_dim = 4 
 """""
 BIG BIG BIG NOTE: Is that the spatial size of ipm and BEV IPM projection are different?
-
-I think they need  to be the same for me to process the gt correctly.
-
+Answer:: while cal gt the ipm_h and ipm_w are multiplied by a factor of 2. 
+May be to process the masks for the section 3.2 I need not multiply the ipm_h and ipm_w by 2.
 """
 
 # ###logging params

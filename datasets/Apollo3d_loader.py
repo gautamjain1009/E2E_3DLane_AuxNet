@@ -428,7 +428,7 @@ class Apollo3d_loader(Dataset):
         batch.update({'gt_phi':torch.from_numpy(gt_lateral_angleoffset)})
         batch.update({'gt_clscore':torch.from_numpy(gt_cls_score)})
 
-        #TODO: add transforms and update the other data accordingly
+        #TODO: add transforms and BGR to RGB and update the other data accordingly
         
         #convert the image to tensor
         img = transforms.ToTensor()(img)

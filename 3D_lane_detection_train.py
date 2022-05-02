@@ -108,6 +108,7 @@ class ProjectiveGridGenerator(nn.Module):
             1. grid specifies the sampling pixel locations normalized by the input spatial dimensions.
             2. pixel locations need to be converted to the range (-1, 1)
         """
+
         grid = (grid - 0.5) * 2
         return grid
 
@@ -172,20 +173,24 @@ class Anchorless3DLanedetection(nn.Module):
 
         size_top = torch.Size([self.batch_size, np.int(cfg.ipm_h), np.int(cfg.ipm_w)])
 
-        #initialize the BEV projective grid
+        # ----------------- BEV projective grid -----------------
         self.projective_layer = ProjectiveGridGenerator(size_top, self.M_inv)
 
-        #initalize the BEV encoder
-        self.bev_encoder = self.make_layers([8, 'M', 16, 'M', 32, 'M', 64, "M", 64], input_dim, batch_norm=True)
+        ## ----------------- BEV Encoder -----------------
+        self.bev_encoder = self.make_layers([8, 'M', 16, 'M', 32, 'M', 64, "M", 64, "M", 64], input_dim, batch_norm=True)
+        
+            #matching the bev_encoder features with gt spatial size for regression
         self.layer1 = nn.Conv2d(64, 32, kernel_size=1, stride=1, padding=0)
         self.layer2 = nn.Conv2d(32, 16, kernel_size=1, stride=1, padding=0)
         self.layer3 = nn.Conv2d(16, 13, kernel_size=1, stride=1, padding=0)
-
-    """
-    I need to add more 1x1 convolutions to the BEV encoder to match the size of grid that after dividing the bev image into tiles
-
-    
-    """
+        
+        # ----------------- embedding -----------------
+        self.embedding = nn.Sequential(
+            nn.Conv2d(1, 8, 1),
+            nn.BatchNorm2d(8),
+            nn.ReLU(),
+            nn.Conv2d(8, cfg.embedding_dim, 1)
+        )
 
     def make_layers(self, cfg, in_channels=3, batch_norm=False):
         layers = []
@@ -200,7 +205,28 @@ class Anchorless3DLanedetection(nn.Module):
                     layers += [conv2d, nn.ReLU(inplace=True)]
                 in_channels = v
         return nn.Sequential(*layers)
+    
+    def forward(self,input):
 
+        cam_height = self.cam_height
+        cam_pitch = self.cam_pitch
+        
+        #spatial transfer features image to ipm
+        grid = self.projective_layer(self.M_inv)
+        x_proj = F.grid_sample(input, grid)
+        print("x_proj.shape: ", x_proj.shape)
+
+        embedding_features = self.embedding(x_proj)
+        print("check the size of the embedding_features: ", embedding_features.shape)
+
+        # Extract the features from the BEV projected grid
+        bev_features = self.bev_encoder(x_proj)
+        print("checking the tensor shaoe ater bev_encoder: ", bev_features.shape)
+        bev_features = self.layer1(bev_features)
+        bev_features = self.layer2(bev_features)
+        bev_features = self.layer3(bev_features)
+
+        return bev_features
     """
     Below code needs to activate while training and data augmentation
     """
@@ -238,22 +264,9 @@ class Anchorless3DLanedetection(nn.Module):
     #         aug_mats[i] = torch.matmul(torch.matmul(self.S_im_inv, aug_mats[i]), self.S_im)
     #         self.M_inv[i] = torch.matmul(aug_mats[i], self.M_inv[i])
     
-    def forward(self,input):
-
-        cam_height = self.cam_height
-        cam_pitch = self.cam_pitch
-        
-        #spatial transfer features image to ipm
-        grid = self.projective_layer(self.M_inv)
-        x_proj = F.grid_sample(input, grid)
-
-        # Extract the features from the BEV projected grid
-        bev_features = self.bev_encoder(x_proj)
-        bev_features = self.layer1(bev_features)
-        bev_features = self.layer2(bev_features)
-        bev_features = self.layer3(bev_features)
-
-        return bev_features
+    """
+    DEFINE THE lOSS FUNCTIONS FOR EMBEDDING AND REGRESSION
+    """
 
 
 if __name__ == "__main__":
@@ -317,7 +330,7 @@ if __name__ == "__main__":
     o = o/torch.max(torch.max(o, dim=2, keepdim=True)[0], dim=3, keepdim=True)[0] 
     o = o[:,1:2,:,:]    
     """
-    #BIG BIG NOTE: in my case remember I need to obtain the binary seg masks for the other network output 
+    #BIG BIG NOTE: In my case remember I need to obtain the binary seg masks for the other network output 
     currently I have 7 classes Investigate that when the network is finished
     """
 
