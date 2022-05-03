@@ -119,11 +119,15 @@ class Anchorless3DLanedetection(nn.Module):
         self.input_dim = input_dim
         self.device = device
         self.batch_size =  cfg.batch_size        
+        self.embedding_dim = cfg.embedding_dim
+        self.delta_push = cfg.delta_push
+        self.delta_pull = cfg.delta_pull
+
         org_img_size = np.array([cfg.org_h, cfg.org_w])
         resize_img_size = np.array([cfg.resize_h, cfg.resize_w])
-
+        self.tile_size = cfg.tile_size
         cam_pitch = np.pi / 180 * cfg.pitch
-
+        
         self.cam_height = torch.tensor(cfg.cam_height).unsqueeze_(0).expand([self.batch_size, 1]).type(torch.FloatTensor)
         self.cam_pitch = torch.tensor(cam_pitch).unsqueeze_(0).expand([self.batch_size, 1]).type(torch.FloatTensor)
 
@@ -183,13 +187,13 @@ class Anchorless3DLanedetection(nn.Module):
         self.layer1 = nn.Conv2d(64, 32, kernel_size=1, stride=1, padding=0)
         self.layer2 = nn.Conv2d(32, 16, kernel_size=1, stride=1, padding=0)
         self.layer3 = nn.Conv2d(16, 13, kernel_size=1, stride=1, padding=0)
-        
+
         # ----------------- embedding -----------------
         self.embedding = nn.Sequential(
             nn.Conv2d(1, 8, 1),
             nn.BatchNorm2d(8),
             nn.ReLU(),
-            nn.Conv2d(8, cfg.embedding_dim, 1)
+            nn.Conv2d(8, self.embedding_dim, 1)
         )
 
     def make_layers(self, cfg, in_channels=3, batch_norm=False):
@@ -205,29 +209,7 @@ class Anchorless3DLanedetection(nn.Module):
                     layers += [conv2d, nn.ReLU(inplace=True)]
                 in_channels = v
         return nn.Sequential(*layers)
-    
-    def forward(self,input):
-
-        cam_height = self.cam_height
-        cam_pitch = self.cam_pitch
-        
-        #spatial transfer features image to ipm
-        grid = self.projective_layer(self.M_inv)
-        x_proj = F.grid_sample(input, grid)
-        print("x_proj.shape: ", x_proj.shape)
-
-        embedding_features = self.embedding(x_proj)
-        print("check the size of the embedding_features: ", embedding_features.shape)
-
-        # Extract the features from the BEV projected grid
-        bev_features = self.bev_encoder(x_proj)
-        print("checking the tensor shaoe ater bev_encoder: ", bev_features.shape)
-        bev_features = self.layer1(bev_features)
-        bev_features = self.layer2(bev_features)
-        bev_features = self.layer3(bev_features)
-
-        return bev_features
-    """
+        """
     Below code needs to activate while training and data augmentation
     """
     # def update_projection(self, args, cam_height, cam_pitch):
@@ -263,10 +245,112 @@ class Anchorless3DLanedetection(nn.Module):
     #         # augmentation need to be applied in unnormalized image coords for M_inv
     #         aug_mats[i] = torch.matmul(torch.matmul(self.S_im_inv, aug_mats[i]), self.S_im)
     #         self.M_inv[i] = torch.matmul(aug_mats[i], self.M_inv[i])
+    def forward(self,input):
+
+        cam_height = self.cam_height
+        cam_pitch = self.cam_pitch
+        
+        #spatial transfer features image to ipm
+        grid = self.projective_layer(self.M_inv)
+        x_proj = F.grid_sample(input, grid)
+        print("x_proj.shape: ", x_proj.shape)
+
+        embedding_features = self.embedding(x_proj)
+        print("check the size of the embedding_features: ", embedding_features.shape)
+
+        # Extract the features from the BEV projected grid
+        bev_features = self.bev_encoder(x_proj)
+        print("checking the tensor shaoe ater bev_encoder: ", bev_features.shape)
+        bev_features = self.layer1(bev_features)
+        bev_features = self.layer2(bev_features)
+        bev_features = self.layer3(bev_features)
+
+        return bev_features
+
     
     """
-    DEFINE THE lOSS FUNCTIONS FOR EMBEDDING AND REGRESSION
+    DEFINE THE lOSS FUNCTIONS FOR EMBEDDING clustering AND REGRESSION
     """
+    def classification_regression_loss(self):
+        pass 
+
+
+    def discriminative_loss(self, embedding, delta_c_gt):  
+        
+        """
+        Embedding == f_ij 
+        delta_c = del_i,j for classification if that tile is part of the lane or not
+        """
+        pull_loss = torch.tensor(0 ,dtype = embedding.dtype, device = embedding.device)
+        push_loss = torch.tensor(0, dtype = embedding.dtype, device = embedding.device)
+        
+        #iterating over batches
+        for b in range(embedding.shape[0]):
+            
+            embedding_b = embedding[b]  #---->(4,H*,W*)
+            delta_c_gt_b = delta_c_gt[b] # will be a tensor of size (13,8) or whatever the grid size is consits of lane labels
+            
+            #delta_c_gt ---> [batch_size, 13, 8] where every element tells you which lane you belong too. 
+
+            labels = torch.unique(delta_c_gt_b) #---> array of type of labels
+            num_lanes = len(labels)
+            
+            if num_lanes==0:
+                _nonsense = embedding.sum()
+                _zero = torch.zeros_like(_nonsense)
+                pull_loss = pull_loss + _nonsense * _zero
+                push_loss = push_loss + _nonsense * _zero
+                continue
+
+            centroid_mean = []
+            for lane_c in labels: # it will run for the number of lanes basically l_c = 1,2,3,4,5 
+                
+                #1. Obtain one hot tensor for tile class labels
+                delta_c = torch.where(delta_c_gt_b==lane_c,1,0) # bool tensor for lane_c ----> size (13,8)
+    
+                tensor, count = torch.unique(delta_c, return_counts=True)
+                N_c = count[1].item() # number of tiles in lane_c
+                
+                patchwise_mean = []
+                
+                #extracting tile patches from the embedding tensor
+                for r in range(0,embedding_b.shape[1],self.tile_size):
+                    for c in range(0,embedding_b.shape[2],self.tile_size):
+                        
+                        f_ij = embedding_b[:,r:r+self.tile_size,c:c+self.tile_size] #----> (4,32,32) 
+                        f_ij = f_ij.reshape(f_ij.shape[0], f_ij.shape[1]*f_ij.shape[2])
+                        
+                        #2. calculate mean for lane_c (mu_c) patchwise
+                        mu_c = torch.sum(f_ij * delta_c[int(r/self.tile_size),int(c/self.tile_size)], dim = 1)/N_c #--> (4) mu for all the four embeddings
+                        patchwise_mean.append(mu_c)
+                        #3. calculate the pull loss patchwise
+                        
+                        pull_loss = pull_loss + torch.mean(F.relu( delta_c[int(r/self.tile_size),int(c/self.tile_size)] * torch.norm(f_ij-mu_c.reshape(4,1),dim = 0)- self.delta_pull)**2) / num_lanes
+                        
+                patchwise_centroid = torch.stack(patchwise_mean) #--> (32*32,4)
+                patchwise_centroid = torch.mean(patchwise_centroid, dim =0) #--> (4)
+                
+                centroid_mean.append(patchwise_centroid)
+
+            centroid_mean = torch.stack(centroid_mean) #--> (num_lanes,4)
+
+            if num_lanes > 1:
+                
+                #4. calculate the push loss
+                centroid_mean_A = centroid_mean.reshape(-1,1, 4)
+                centroid_mean_B =centroid_mean.reshape(1,-1, 4)
+
+                dist = torch.norm(centroid_mean_A-centroid_mean_B, dim = 2) #--> (num_lanes,num_lanes)
+                dist = dist + torch.eye(num_lanes, dtype = dist.dtype, device = dist.device) * self.delta_push
+                
+                #divide by 2 to compensate the double loss calculation
+                push_loss = push_loss + torch.sum(F.relu(-dist + self.delta_push)**2) / (num_lanes * (num_lanes-1)) / 2
+        
+        pull_loss= pull_loss / self.batch_size
+        push_loss = push_loss / self.batch_size
+
+        return pull_loss, push_loss
+
 
 
 if __name__ == "__main__":
@@ -336,8 +420,6 @@ if __name__ == "__main__":
 
     o2 = model3d(o)
     print("checking the shape of the output tensor",o2.shape)
-
-
 
 
 
