@@ -209,7 +209,8 @@ class Anchorless3DLanedetection(nn.Module):
                     layers += [conv2d, nn.ReLU(inplace=True)]
                 in_channels = v
         return nn.Sequential(*layers)
-        """
+    
+    """
     Below code needs to activate while training and data augmentation
     """
     # def update_projection(self, args, cam_height, cam_pitch):
@@ -267,11 +268,38 @@ class Anchorless3DLanedetection(nn.Module):
 
         return bev_features
 
-    
-    """
-    DEFINE THE lOSS FUNCTIONS FOR EMBEDDING clustering AND REGRESSION
-    """
-    def classification_regression_loss(self):
+    def classification_regression_loss(self, rho_pred, rho_gt, delta_z_pred, delta_z_gt, cls_pred, cls_gt, phi_pred, phi_gt):
+        """"
+        Params:
+            rho_pred: predicted rho [batch_size,13,8]
+            rho_gt: ground truth rho [batch_size,13,8]
+            delta_z_pred: predicted delta_z [batch_size,13,8]
+            delta_z_gt: ground truth delta_z [batch_size,13,8]
+            cls_pred: predicted cls [batch_size,13,8]
+            cls_gt: ground truth cls [batch_size,13,8]
+            phi_pred: predicted phi [batch_size,10,13,8]
+            phi_gt: ground truth phi [batch_size,10,13,8]
+
+        return:
+            Angle_loss: loss for angle regression (Cross entropy loss for phi vector) + l1 loss for phi vector
+            offset_loss: l1 loss for delta_z + l1 loss for rho
+            score_loss: BCE loss for cls_score regression
+
+            Overall_loss: score_loss + c_ij * Angle_loss + c_ij * offset_loss
+        """
+
+        l1loss= nn.L1Loss()
+        bceloss = nn.BCELoss()
+        celoss = nn.CrossEntropyLoss()
+
+        #VALIDATE & TODO: manage the datatypes later for the loss calculation for training 
+
+        # for i in range(rho_pred.shape[0]):
+            
+
+
+
+
         pass 
 
 
@@ -292,6 +320,7 @@ class Anchorless3DLanedetection(nn.Module):
             
             #delta_c_gt ---> [batch_size, 13, 8] where every element tells you which lane you belong too. 
 
+            ##TODO: Add condition for 0 class
             labels = torch.unique(delta_c_gt_b) #---> array of type of labels
             num_lanes = len(labels)
             
@@ -350,7 +379,6 @@ class Anchorless3DLanedetection(nn.Module):
         push_loss = push_loss / self.batch_size
 
         return pull_loss, push_loss
-
 
 
 if __name__ == "__main__":

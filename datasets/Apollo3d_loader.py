@@ -226,7 +226,7 @@ class CalculateDistanceAngleOffests(object):
         # self.y_samples = np.linspace(args.anchor_y_steps[0], args.anchor_y_steps[-1], num=100, endpoint=False)
         self.y_samples = np.linspace(self.min_y, self.max_y, num=100, endpoint=False)
 
-    def draw_bevlanes(self, gt_lanes, img, gt_cam_height, gt_cam_pitch):
+    def draw_bevlanes(self, gt_lanes, img, gt_cam_height, gt_cam_pitch, color_list):
         
         P_g2im = projection_g2im(gt_cam_pitch, gt_cam_height, self.K)
         # P_gt = P_g2im
@@ -266,7 +266,7 @@ class CalculateDistanceAngleOffests(object):
         # cv2.imwrite("/home/gautam/Thesis/E2E_3DLane_AuxNet/datasets/viss_test.jpg", im_ipm)        
         dummy_image = im_ipm.copy()
         dummy_image[:,:,:] = 0
-
+        
         for i in range(cnt_gt):
     
             x_values = np.array(gt_lanes[i])[:, 0]
@@ -284,15 +284,16 @@ class CalculateDistanceAngleOffests(object):
                 y_ipm_values = self.y_samples
 
             x_ipm_values, y_ipm_values = homographic_transformation(self.H_g2ipm, x_ipm_values[:100], y_ipm_values)
+
             x_ipm_values = x_ipm_values.astype(np.int)
             y_ipm_values = y_ipm_values.astype(np.int)
-
+             
             # draw on ipm
             for k in range(1, x_ipm_values.shape[0]):
                 # only draw the visible portion
                 if gt_visibility_mat[i, k - 1] and gt_visibility_mat[i, k] and z_values[k] < gt_cam_height:
                     dummy_image = cv2.line(dummy_image, (x_ipm_values[k - 1], y_ipm_values[k - 1]),
-                                        (x_ipm_values[k], y_ipm_values[k]), (255,0,0), 1)
+                                        (x_ipm_values[k], y_ipm_values[k]), (color_list[i][0],0,0), 1)
 
         return dummy_image
 
@@ -314,20 +315,26 @@ def generategt_pertile(tile_size, gt_lanes, img , gt_cam_height, gt_cam_pitch):
     camera_intrinsics = np.array([[2015., 0., 960.],
                        [0., 2015., 540.],
                        [0., 0., 1.]])
+    
     #TODO: Add the harcoded params into the config file
     #TODO: modify the top view region
     top_view_region = np.array([[-10, 103], [10, 103], [-10, 3], [10, 3]])
     org_h = 1080
     org_w = 1920
     crop_y = 0
+
+    ##MAIN TODO:::: check if ipm_w and ipm_h need to be upsampled or not (*2) or it should be same.
     ipm_w = 128
     ipm_h = 208
     n_bins = 10 
 
+    #CONDITION: There exist max 6 lanes in the dataset
+    color_list = [[50,1],[100,2],[150,3],[200,4],[250,5],[255,6]] #(color, lane_class) 
+
     #init the bev projection class
     calculate_bev_projection = CalculateDistanceAngleOffests(org_h, org_w, camera_intrinsics, ipm_w, ipm_h, crop_y, top_view_region)
     
-    bev_projected_lanes = calculate_bev_projection.draw_bevlanes(gt_lanes, img , gt_cam_height, gt_cam_pitch) ## returns an image array of gt lanes projected on BEV
+    bev_projected_lanes = calculate_bev_projection.draw_bevlanes(gt_lanes, img , gt_cam_height, gt_cam_pitch, color_list) ## returns an image array of gt lanes projected on BEV
 
     # cv2.imwrite("/home/gautam/Thesis/E2E_3DLane_AuxNet/datasets/complete_lines_test.jpg" , bev_projected_lanes)
 
@@ -335,14 +342,14 @@ def generategt_pertile(tile_size, gt_lanes, img , gt_cam_height, gt_cam_pitch):
     gt_rho = np.zeros((int(bev_projected_lanes.shape[0]/tile_size), int(bev_projected_lanes.shape[1]/tile_size)))
     gt_phi = np.zeros((n_bins, int(bev_projected_lanes.shape[0]/tile_size), int(bev_projected_lanes.shape[1]/tile_size)))
     gt_c = np.zeros((int(bev_projected_lanes.shape[0]/tile_size), int(bev_projected_lanes.shape[1]/tile_size)))
-    
-    ## TODO: Enable for multiple batches
+    gt_lane_class = np.zeros((int(bev_projected_lanes.shape[0]/tile_size), int(bev_projected_lanes.shape[1]/tile_size)))
+
     bev_projected_lanes = bev_projected_lanes[:,:,0]
-    for r in range(0,bev_projected_lanes.shape[0],tile_size): ### i === 13 times
-        for c in range(0,bev_projected_lanes.shape[1],tile_size): ### j == 8 times
+    for r in range(0,bev_projected_lanes.shape[0],tile_size): ### r === 13 times
+        for c in range(0,bev_projected_lanes.shape[1],tile_size): ### c == 8 times
             # cv2.imwrite(f"/home/gautam/Thesis/E2E_3DLane_AuxNet/datasets/test/img{r}_{c}.png",bev_projected_lanes[r:r+32, c:c+32])
             tile_img = bev_projected_lanes[r:r+32, c:c+32]
-            
+
             accumulator, thetas, rhos, lane_exist = HoughLine(tile_img)
             idx = np.argmax(accumulator)
             rho = int(rhos[int(idx / accumulator.shape[1])])
@@ -359,8 +366,23 @@ def generategt_pertile(tile_size, gt_lanes, img , gt_cam_height, gt_cam_pitch):
                 gt_c[x_idx,y_idx] = 1
             else:
                 gt_c[x_idx,y_idx] = 0
-                
-    return gt_rho, gt_phi, gt_c
+
+            if 50 in tile_img:
+                gt_lane_class[x_idx,y_idx] = 1
+            elif 100 in tile_img:
+                gt_lane_class[x_idx,y_idx] = 2 
+            elif 150 in tile_img:
+                gt_lane_class[x_idx,y_idx] = 3
+            elif 200 in tile_img:
+                gt_lane_class[x_idx,y_idx] = 4
+            elif 250 in tile_img:
+                gt_lane_class[x_idx,y_idx] = 5
+            elif 255 in tile_img:
+                gt_lane_class[x_idx,y_idx] = 6
+            else:
+                gt_lane_class[x_idx,y_idx] = 0
+
+    return gt_rho, gt_phi, gt_c, gt_lane_class
 
 
 #TODO: add data augmentation as per the GeoNet paper
@@ -375,7 +397,7 @@ class Apollo3d_loader(Dataset):
         self.transform = transform
         self.cfg = cfg
         self.args = args 
-        
+
         if phase == "train":
             self.data_filepath = os.path.join(self.data_splits, "train.json")
         else :
@@ -418,17 +440,18 @@ class Apollo3d_loader(Dataset):
         batch.update({"gt_height":gt_camera_height})
         batch.update({"gt_pitch":gt_camera_pitch})
         
-        #TODO: correct the data representation while in the need of visulization
+        #TODO: correct the data representation of lane points while in the need of visulization
         gt_lanelines = gtdata['laneLines']
         batch.update({'gt_lanelines':gt_lanelines})
 
-        gt_lateral_offset, gt_lateral_angleoffset, gt_cls_score= generategt_pertile(32, gt_lanelines, img, gt_camera_height, gt_camera_pitch)
+        gt_lateral_offset, gt_lateral_angleoffset, gt_cls_score, gt_lane_class = generategt_pertile(32, gt_lanelines, img, gt_camera_height, gt_camera_pitch)
 
         batch.update({'gt_rho':torch.from_numpy(gt_lateral_offset)})
         batch.update({'gt_phi':torch.from_numpy(gt_lateral_angleoffset)})
         batch.update({'gt_clscore':torch.from_numpy(gt_cls_score)})
+        batch.update({'gt_lane_class':torch.from_numpy(gt_lane_class)})
 
-        #TODO: add transforms and BGR to RGB and update the other data accordingly
+        #TODO: add transforms normalize the image and BGR to RGB and update the other data accordingly
         
         #convert the image to tensor
         img = transforms.ToTensor()(img)
@@ -459,8 +482,10 @@ def collate_fn(batch):
     gt_cls_score_data = [item['gt_clscore'] for item in batch]
     gt_cls_score_data = torch.stack(gt_cls_score_data, dim = 0)
 
+    gt_lane_class_data = [item['gt_lane_class'] for item in batch]
+    gt_lane_class_data = torch.stack(gt_lane_class_data, dim = 0)
 
-    return [img_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data]
+    return [img_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data]
 
 if __name__ == "__main__":
 
@@ -478,7 +503,7 @@ if __name__ == "__main__":
 
 
     dataset = Apollo3d_loader(camera_intrinsics, data_root, data_splits)
-    loader = DataLoader(dataset, batch_size=6, shuffle=True, num_workers=4, collate_fn=collate_fn)
+    loader = DataLoader(dataset, batch_size=2, shuffle=True, num_workers=2, collate_fn=collate_fn)
     
     # loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=4)
     
@@ -487,6 +512,6 @@ if __name__ == "__main__":
         print(data[4].shape)
         print(data[5].shape)
         print(data[6].shape)
-        break
+        print(data[7].shape)
         # print(data)
         # print(i)
