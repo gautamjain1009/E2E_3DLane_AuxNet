@@ -268,7 +268,7 @@ class Anchorless3DLanedetection(nn.Module):
 
         return bev_features
 
-    def classification_regression_loss(self, rho_pred, rho_gt, delta_z_pred, delta_z_gt, cls_pred, cls_gt, phi_pred, phi_gt):
+    def classification_regression_loss(self, rho_pred, rho_gt, delta_z_pred, delta_z_gt,cls_pred, cls_gt, phi_pred, phi_gt ):
         """"
         Params:
             rho_pred: predicted rho [batch_size,13,8]
@@ -288,19 +288,44 @@ class Anchorless3DLanedetection(nn.Module):
             Overall_loss: score_loss + c_ij * Angle_loss + c_ij * offset_loss
         """
 
-        l1loss= nn.L1Loss()
-        bceloss = nn.BCELoss()
-        celoss = nn.CrossEntropyLoss()
-
+        L1loss= nn.L1Loss()
+        BCEloss = nn.BCEWithLogitsLoss()
+        CEloss = nn.CrossEntropyLoss()
+        
+        batch_size = rho_pred.shape[0]
+        
         #VALIDATE & TODO: manage the datatypes later for the loss calculation for training 
-
-        # for i in range(rho_pred.shape[0]):
+        Overall_loss = torch.tensor(0, dtype = cls_pred.dtype, device = cls_pred.device)
+        
+        #TODO: change the condition for loops(as per the shape of the tile grid)
+        for b in range(rho_pred.shape[0]):
+            for i in range(rho_pred.shape[1]): # 13 times 
+                for j in range(rho_pred.shape[2]): # 8 times
+                    #----------------- Offsets loss----------
+                    loss_rho_ij = L1loss(rho_pred[b,i,j],rho_gt[b,i,j])
+                    loss_delta_z_ij = L1loss(delta_z_pred[b,i,j], delta_z_gt[b,i,j])
+                    
+                    offsetsLoss_ij = loss_rho_ij + loss_delta_z_ij 
+                    
+                    #----------------classification score loss---------
+                    loss_score_ij = BCEloss(cls_pred[b,i,j], cls_gt[b,i,j])
+                    
+                    #--------------- Line angle loss ------------------
+                    #TODO: add delta phi loss with indicator function
+                    loss_phi_ij = CEloss(phi_pred[b,:,i,j].reshape(1,10),phi_gt[b,:,i,j].reshape(1,10))
+                    
+                    Lineangle_loss = loss_phi_ij
+                    
+                    #----------------Overall loss -------------------
+                    Overall_loss_ij =  loss_score_ij + cls_gt[b,i,j]* Lineangle_loss + cls_gt[b,i,j] * offsetsLoss_ij
+                    
+                    Overall_loss = Overall_loss + Overall_loss_ij 
             
-
-
-
-
-        pass 
+    #         #TODO: Verify if I need to divid this loss for one batch by grid_w * grid_h
+    #         Overall_loss = Overall_loss/ (rho_pred.shape[1]* rho_pred.shape[2])
+        Average_OverallLoss = Overall_loss / batch_size
+        
+        return Average_OverallLoss
 
 
     def discriminative_loss(self, embedding, delta_c_gt):  
