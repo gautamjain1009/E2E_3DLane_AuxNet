@@ -268,7 +268,7 @@ class Anchorless3DLanedetection(nn.Module):
 
         return bev_features
 
-    def classification_regression_loss(self, rho_pred, rho_gt, delta_z_pred, delta_z_gt,cls_pred, cls_gt, phi_pred, phi_gt ):
+    def classification_regression_loss(self, rho_pred, rho_gt, delta_z_pred, delta_z_gt, cls_pred, cls_gt, phi_pred, phi_gt ):
         """"
         Params:
             rho_pred: predicted rho [batch_size,13,8]
@@ -293,7 +293,7 @@ class Anchorless3DLanedetection(nn.Module):
         CEloss = nn.CrossEntropyLoss()
         
         batch_size = rho_pred.shape[0]
-        
+
         #VALIDATE & TODO: manage the datatypes later for the loss calculation for training 
         Overall_loss = torch.tensor(0, dtype = cls_pred.dtype, device = cls_pred.device)
         

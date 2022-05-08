@@ -223,7 +223,6 @@ class CalculateDistanceAngleOffests(object):
         self.x_min = top_view_region[0, 0]
         self.x_max = top_view_region[1, 0]
 
-        # self.y_samples = np.linspace(args.anchor_y_steps[0], args.anchor_y_steps[-1], num=100, endpoint=False)
         self.y_samples = np.linspace(self.min_y, self.max_y, num=100, endpoint=False)
 
     def draw_bevlanes(self, gt_lanes, img, gt_cam_height, gt_cam_pitch, color_list):
@@ -241,11 +240,8 @@ class CalculateDistanceAngleOffests(object):
         # print("Checking the shape of cropped image: ", img.shape)     
 
         # img = img.astype(np.float) / 255
-        # cv2.imwrite("/home/gautam/e2e/lane_detection/3d_approaches/Pytorch_Generalized_3D_Lane_Detection/tools/test1.jpg", img) #normalized
         im_ipm = cv2.warpPerspective(img, H_im2ipm, (self.ipm_w, self.ipm_h))
         # im_ipm = np.clip(im_ipm, 0, 1)
-        # cv2.imwrite("/home/gautam/e2e/lane_detection/3d_approaches/Pytorch_Generalized_3D_Lane_Detection/tools/test_ipm.jpg", im_ipm)
-
         cnt_gt = len(gt_lanes)
         gt_visibility_mat = np.zeros((cnt_gt, 100))
                 
@@ -261,17 +257,16 @@ class CalculateDistanceAngleOffests(object):
                                                                                      self.y_samples <= max_y)))
             gt_visibility_mat[i, :] = np.logical_and(gt_visibility_mat[i, :], visibility_vec)
 
-        flag = False
-
-        # cv2.imwrite("/home/gautam/Thesis/E2E_3DLane_AuxNet/datasets/viss_test.jpg", im_ipm)        
+        flag = False     
         dummy_image = im_ipm.copy()
         dummy_image[:,:,:] = 0
-        
+
+        delta_z_dict = {}
         for i in range(cnt_gt):
     
             x_values = np.array(gt_lanes[i])[:, 0]
             z_values = np.array(gt_lanes[i])[:, 1]
-
+            
             # TODO: remove this condition later
             if flag == True:
                 x_ipm_values, y_ipm_values = transform_lane_g2gflat(gt_cam_height, x_values[:100], self.y_samples, z_values[:100])
@@ -287,15 +282,17 @@ class CalculateDistanceAngleOffests(object):
 
             x_ipm_values = x_ipm_values.astype(np.int)
             y_ipm_values = y_ipm_values.astype(np.int)
-             
             # draw on ipm
             for k in range(1, x_ipm_values.shape[0]):
                 # only draw the visible portion
                 if gt_visibility_mat[i, k - 1] and gt_visibility_mat[i, k] and z_values[k] < gt_cam_height:
+                    
+                    #TODO: Verify - or + for the value for delta_z
+                    delta_z_dict.update({(x_ipm_values[k], y_ipm_values[k]): gt_cam_height + z_values[k]})
                     dummy_image = cv2.line(dummy_image, (x_ipm_values[k - 1], y_ipm_values[k - 1]),
                                         (x_ipm_values[k], y_ipm_values[k]), (color_list[i][0],0,0), 1)
 
-        return dummy_image
+        return dummy_image, delta_z_dict
 
 #TODO: Rho values are all negative for some reason verify it is correct
 def generategt_pertile(tile_size, gt_lanes, img , gt_cam_height, gt_cam_pitch):
@@ -334,7 +331,7 @@ def generategt_pertile(tile_size, gt_lanes, img , gt_cam_height, gt_cam_pitch):
     #init the bev projection class
     calculate_bev_projection = CalculateDistanceAngleOffests(org_h, org_w, camera_intrinsics, ipm_w, ipm_h, crop_y, top_view_region)
     
-    bev_projected_lanes = calculate_bev_projection.draw_bevlanes(gt_lanes, img , gt_cam_height, gt_cam_pitch, color_list) ## returns an image array of gt lanes projected on BEV
+    bev_projected_lanes, dz_dict = calculate_bev_projection.draw_bevlanes(gt_lanes, img,  gt_cam_height, gt_cam_pitch, color_list) ## returns an image array of gt lanes projected on BEV
 
     # cv2.imwrite("/home/gautam/Thesis/E2E_3DLane_AuxNet/datasets/complete_lines_test.jpg" , bev_projected_lanes)
 
@@ -343,13 +340,44 @@ def generategt_pertile(tile_size, gt_lanes, img , gt_cam_height, gt_cam_pitch):
     gt_phi = np.zeros((n_bins, int(bev_projected_lanes.shape[0]/tile_size), int(bev_projected_lanes.shape[1]/tile_size)))
     gt_c = np.zeros((int(bev_projected_lanes.shape[0]/tile_size), int(bev_projected_lanes.shape[1]/tile_size)))
     gt_lane_class = np.zeros((int(bev_projected_lanes.shape[0]/tile_size), int(bev_projected_lanes.shape[1]/tile_size)))
-
+    gt_delta_z = np.zeros((int(bev_projected_lanes.shape[0]/tile_size), int(bev_projected_lanes.shape[1]/tile_size)))
+    
+    print(dz_dict)
     bev_projected_lanes = bev_projected_lanes[:,:,0]
     for r in range(0,bev_projected_lanes.shape[0],tile_size): ### r === 13 times
         for c in range(0,bev_projected_lanes.shape[1],tile_size): ### c == 8 times
             # cv2.imwrite(f"/home/gautam/Thesis/E2E_3DLane_AuxNet/datasets/test/img{r}_{c}.png",bev_projected_lanes[r:r+32, c:c+32])
+            
+            #TODO: replace 32 by tile_size
+            check_line_chords = np.argwhere(bev_projected_lanes[r:r+32, c:c+32] >0) ## denotes a patch of size 32x32
             tile_img = bev_projected_lanes[r:r+32, c:c+32]
-
+            
+            dz = []
+            if r == 0 and c == 0:
+                #find delta_z from line_chords
+                for line_chord in check_line_chords:
+                    try:
+                        delta_z = dz_dict[(line_chord[0], line_chord[1])]
+                    except:
+                        continue
+                    dz.append(delta_z)
+            else: 
+                #find delta_z from line_chords
+                for line_chord in check_line_chords:
+                    try:
+                        # print(line_chord[0]+r)
+                        # print(line_chord[1]+c)
+                        delta_z = dz_dict[(line_chord[1]+c,line_chord[0]+r)]
+                        # print(delta_z)
+                    except:
+                        continue
+                    dz.append(delta_z)
+            
+            if len(dz) != 0:    
+                mean_del_z  = sum(dz) / len(dz)
+            else:
+                mean_del_z = 0
+            
             accumulator, thetas, rhos, lane_exist = HoughLine(tile_img)
             idx = np.argmax(accumulator)
             rho = int(rhos[int(idx / accumulator.shape[1])])
@@ -364,8 +392,10 @@ def generategt_pertile(tile_size, gt_lanes, img , gt_cam_height, gt_cam_pitch):
 
             if lane_exist == True:
                 gt_c[x_idx,y_idx] = 1
+                gt_delta_z[x_idx,y_idx] = mean_del_z
             else:
                 gt_c[x_idx,y_idx] = 0
+                gt_delta_z[x_idx,y_idx] = 0
 
             if 50 in tile_img:
                 gt_lane_class[x_idx,y_idx] = 1
@@ -382,7 +412,7 @@ def generategt_pertile(tile_size, gt_lanes, img , gt_cam_height, gt_cam_pitch):
             else:
                 gt_lane_class[x_idx,y_idx] = 0
 
-    return gt_rho, gt_phi, gt_c, gt_lane_class
+    return gt_rho, gt_phi, gt_c, gt_lane_class, gt_delta_z
 
 
 #TODO: add data augmentation as per the GeoNet paper
@@ -444,13 +474,13 @@ class Apollo3d_loader(Dataset):
         gt_lanelines = gtdata['laneLines']
         batch.update({'gt_lanelines':gt_lanelines})
 
-        gt_lateral_offset, gt_lateral_angleoffset, gt_cls_score, gt_lane_class = generategt_pertile(32, gt_lanelines, img, gt_camera_height, gt_camera_pitch)
+        gt_lateral_offset, gt_lateral_angleoffset, gt_cls_score, gt_lane_class, gt_delta_z = generategt_pertile(32, gt_lanelines, img, gt_camera_height, gt_camera_pitch)
 
         batch.update({'gt_rho':torch.from_numpy(gt_lateral_offset)})
         batch.update({'gt_phi':torch.from_numpy(gt_lateral_angleoffset)})
         batch.update({'gt_clscore':torch.from_numpy(gt_cls_score)})
         batch.update({'gt_lane_class':torch.from_numpy(gt_lane_class)})
-
+        batch.update({'gt_delta_z':torch.from_numpy(gt_delta_z)})
         #TODO: add transforms normalize the image and BGR to RGB and update the other data accordingly
         
         #convert the image to tensor
@@ -485,7 +515,10 @@ def collate_fn(batch):
     gt_lane_class_data = [item['gt_lane_class'] for item in batch]
     gt_lane_class_data = torch.stack(gt_lane_class_data, dim = 0)
 
-    return [img_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data]
+    gt_delta_z_data = [item['gt_delta_z'] for item in batch]
+    gt_delta_z_data = torch.stack(gt_delta_z_data, dim = 0)
+
+    return [img_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data]
 
 if __name__ == "__main__":
 
@@ -503,15 +536,20 @@ if __name__ == "__main__":
 
 
     dataset = Apollo3d_loader(camera_intrinsics, data_root, data_splits)
-    loader = DataLoader(dataset, batch_size=2, shuffle=True, num_workers=2, collate_fn=collate_fn)
+    loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=1, collate_fn=collate_fn)
     
     # loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=4)
     
     for i, data in enumerate(loader):
         print(data[0].shape)
-        print(data[4].shape)
-        print(data[5].shape)
-        print(data[6].shape)
-        print(data[7].shape)
+        print(data[6])
+        print(data[8])
+        # print(data[4].shape)
+        # print(data[5].shape)
+        # a = data[7].numpy()
+        # unique, counts = np.unique(a, return_counts=True)
+        # print(dict(zip(unique, counts)))
+
+
         # print(data)
         # print(i)
