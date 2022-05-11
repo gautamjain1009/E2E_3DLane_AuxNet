@@ -7,10 +7,12 @@ import glob
 import random
 from scipy.interpolate import interp1d
 import torchvision.transforms as transforms
+import torchvision.transforms.functional as F
 from torch.utils.data import Dataset, DataLoader
 import logging 
 logging.basicConfig(level = logging.DEBUG)
 import json 
+from PIL import Image
 
 #helper function later to add in the utils.py responsible for the projection 
 def homography_crop_resize(org_img_size, crop_y, resize_img_size):
@@ -36,7 +38,7 @@ def projection_g2im(cam_pitch, cam_height, K):
     P_g2im = np.matmul(K, P_g2c)
     return P_g2im
 
-def homograpthy_g2im(cam_pitch, cam_height, K):
+def homography_g2im(cam_pitch, cam_height, K):
     # transform top-view region to original image region
     R_g2c = np.array([[1, 0, 0],
                       [0, np.cos(np.pi / 2 + cam_pitch), -np.sin(np.pi / 2 + cam_pitch)],
@@ -231,7 +233,7 @@ class CalculateDistanceAngleOffests(object):
         # P_gt = P_g2im
         P_gt = np.matmul(self.H_crop, P_g2im)
 
-        H_g2im = homograpthy_g2im(gt_cam_pitch, gt_cam_height, self.K)
+        H_g2im = homography_g2im(gt_cam_pitch, gt_cam_height, self.K)
         H_im2ipm = np.linalg.inv(np.matmul(self.H_crop, np.matmul(H_g2im, self.H_ipm2g)))
 
         # print("Checking the shape of original image: ", img.shape)
@@ -309,12 +311,14 @@ def generategt_pertile(tile_size, gt_lanes, img , gt_cam_height, gt_cam_pitch):
             gt_phi --> [batch_size, n_bins, ipm_h/tile_size, ipm_w/tile_size]
             gt_c --> [batch_size, ipm_h/tile_size, ipm_w/tile_size]
     """
+    #K
     camera_intrinsics = np.array([[2015., 0., 960.],
                        [0., 2015., 540.],
                        [0., 0., 1.]])
     
     #TODO: Add the harcoded params into the config file
-    #TODO: modify the top view region
+    
+    #TODO: modify the top view region as per the GenLanenet paper
     top_view_region = np.array([[-10, 103], [10, 103], [-10, 3], [10, 3]])
     org_h = 1080
     org_w = 1920
@@ -342,7 +346,6 @@ def generategt_pertile(tile_size, gt_lanes, img , gt_cam_height, gt_cam_pitch):
     gt_lane_class = np.zeros((int(bev_projected_lanes.shape[0]/tile_size), int(bev_projected_lanes.shape[1]/tile_size)))
     gt_delta_z = np.zeros((int(bev_projected_lanes.shape[0]/tile_size), int(bev_projected_lanes.shape[1]/tile_size)))
     
-    print(dz_dict)
     bev_projected_lanes = bev_projected_lanes[:,:,0]
     for r in range(0,bev_projected_lanes.shape[0],tile_size): ### r === 13 times
         for c in range(0,bev_projected_lanes.shape[1],tile_size): ### c == 8 times
@@ -365,10 +368,7 @@ def generategt_pertile(tile_size, gt_lanes, img , gt_cam_height, gt_cam_pitch):
                 #find delta_z from line_chords
                 for line_chord in check_line_chords:
                     try:
-                        # print(line_chord[0]+r)
-                        # print(line_chord[1]+c)
                         delta_z = dz_dict[(line_chord[1]+c,line_chord[0]+r)]
-                        # print(delta_z)
                     except:
                         continue
                     dz.append(delta_z)
@@ -461,8 +461,15 @@ class Apollo3d_loader(Dataset):
         
         if not os.path.exists(img_path):
             raise FileNotFoundError('cannot find file: {}'.format(img_path))
+        """
+        Things I need to do here::: 
+        1. Normalise the image.
+        2. Resize it as per the 2d model need. 
 
+        
+        """
         img = cv2.imread(img_path)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         gt_camera_height = gtdata['cam_height'] 
         gt_camera_pitch =gtdata['cam_pitch']
@@ -536,14 +543,14 @@ if __name__ == "__main__":
 
 
     dataset = Apollo3d_loader(camera_intrinsics, data_root, data_splits)
-    loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=1, collate_fn=collate_fn)
+    loader = DataLoader(dataset, batch_size=2, shuffle=True, num_workers=2, collate_fn=collate_fn)
     
     # loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=4)
     
     for i, data in enumerate(loader):
         print(data[0].shape)
-        print(data[6])
-        print(data[8])
+        print(data[6].shape)
+        print(data[8].shape)
         # print(data[4].shape)
         # print(data[5].shape)
         # a = data[7].numpy()
