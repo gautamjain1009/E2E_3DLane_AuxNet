@@ -1,3 +1,4 @@
+from curses import resize_term
 import torch 
 import numpy as np 
 import cv2 
@@ -12,7 +13,13 @@ from torch.utils.data import Dataset, DataLoader
 import logging 
 logging.basicConfig(level = logging.DEBUG)
 import json 
-from PIL import Image
+import sys
+
+sys.path.append("../")
+"""
+Import just for unit test
+"""
+from utils.config import Config
 
 #helper function later to add in the utils.py responsible for the projection 
 def homography_crop_resize(org_img_size, crop_y, resize_img_size):
@@ -188,8 +195,20 @@ def HoughLine(image):
                         accumulator[int(r) + Maxdist,k] += 1
         return accumulator, thetas, rs, lane_exist
 
+def data_aug_rotate(img):
+    
+    rot = random.uniform(-np.pi/18, np.pi/18)
+    # rot = random.uniform(-10, 10)
+    center_x = img.shape[0]/ 2
+    center_y = img.shape[1]/ 2
+    rot_mat = cv2.getRotationMatrix2D((center_x, center_y), rot, 1.0)
+    img_rot = np.array(img)
+    img_rot = cv2.warpAffine(img_rot, rot_mat, (img.shape[0],img.shape[1]), flags=cv2.INTER_LINEAR)
+    rot_mat = np.vstack([rot_mat, [0, 0, 1]])
+    return img_rot, rot_mat
+
 class CalculateDistanceAngleOffests(object):
-    def __init__(self, org_h, org_w, K, ipm_w, ipm_h, crop_y, top_view_region):
+    def __init__(self, org_h, org_w, resize_h, resize_w, K, ipm_w, ipm_h, crop_y, top_view_region):
         
         self.min_y = 0
         self.max_y = 80
@@ -202,18 +221,19 @@ class CalculateDistanceAngleOffests(object):
         """
             TODO: change the org_h and org_w according to feature map size in the network may be top view region too
         """
-        self.resize_h = org_h
-        self.resize_w = org_w
+        self.org_h = org_h
+        self.org_w = org_w
+        self.resize_h = resize_h
+        self.resize_w = resize_w
 
+        ###TODO: Activate the resizing here
         # self.resize_h = resize_h
         # self.resize_w = resize_w
         
-        self.ipm_w = 2*ipm_w
-        self.ipm_h = 2*ipm_h
-        
-        #TODO: check the defination of these variables org_h, org_w, ipm_w, ipm_h etc. in terms of class variables
+        self.ipm_w = ipm_w
+        self.ipm_h = ipm_h
 
-        self.H_crop = homography_crop_resize([org_h, org_w], self.crop_y, [self.resize_h, self.resize_w])
+        self.H_crop = homography_crop_resize([self.org_h, self.org_w], self.crop_y, [self.resize_h, self.resize_w])
         # transformation from ipm to ground region
         self.H_ipm2g = cv2.getPerspectiveTransform(np.float32([[0, 0],
                                                               [self.ipm_w-1, 0],
@@ -236,7 +256,7 @@ class CalculateDistanceAngleOffests(object):
         H_g2im = homography_g2im(gt_cam_pitch, gt_cam_height, self.K)
         H_im2ipm = np.linalg.inv(np.matmul(self.H_crop, np.matmul(H_g2im, self.H_ipm2g)))
 
-        # print("Checking the shape of original image: ", img.shape)
+        print("Checking the shape of original image: ", img.shape)
 
         img = cv2.warpPerspective(img, self.H_crop, (self.resize_w, self.resize_h))
         # print("Checking the shape of cropped image: ", img.shape)     
@@ -297,7 +317,7 @@ class CalculateDistanceAngleOffests(object):
         return dummy_image, delta_z_dict
 
 #TODO: Rho values are all negative for some reason verify it is correct
-def generategt_pertile(tile_size, gt_lanes, img , gt_cam_height, gt_cam_pitch):
+def generategt_pertile(gt_lanes, img , gt_cam_height, gt_cam_pitch, cfg):
     
     # n_tiles will be deifned as the number of tiles needed as per the size of the last feature map after bev encoder
 
@@ -312,32 +332,33 @@ def generategt_pertile(tile_size, gt_lanes, img , gt_cam_height, gt_cam_pitch):
             gt_c --> [batch_size, ipm_h/tile_size, ipm_w/tile_size]
     """
     #K
-    camera_intrinsics = np.array([[2015., 0., 960.],
-                       [0., 2015., 540.],
-                       [0., 0., 1.]])
-    
+    camera_intrinsics = cfg.K
+    tile_size = cfg.tile_size
     #TODO: Add the harcoded params into the config file
     
     #TODO: modify the top view region as per the GenLanenet paper
-    top_view_region = np.array([[-10, 103], [10, 103], [-10, 3], [10, 3]])
-    org_h = 1080
-    org_w = 1920
-    crop_y = 0
+    top_view_region = cfg.top_view_region
+    org_h = cfg.org_h
+    org_w = cfg.org_w
+    crop_y = cfg.crop_y
 
     ##MAIN TODO:::: check if ipm_w and ipm_h need to be upsampled or not (*2) or it should be same.
-    ipm_w = 128
-    ipm_h = 208
-    n_bins = 10 
+    ipm_w = cfg.ipm_w
+    ipm_h = cfg.ipm_h
+    n_bins = cfg.n_bins
+
+    resize_h = cfg.resize_h
+    resize_w = cfg.resize_w
 
     #CONDITION: There exist max 6 lanes in the dataset
-    color_list = [[50,1],[100,2],[150,3],[200,4],[250,5],[255,6]] #(color, lane_class) 
+    color_list = cfg.color_list
 
     #init the bev projection class
-    calculate_bev_projection = CalculateDistanceAngleOffests(org_h, org_w, camera_intrinsics, ipm_w, ipm_h, crop_y, top_view_region)
+    calculate_bev_projection = CalculateDistanceAngleOffests(org_h, org_w, resize_h, resize_w, camera_intrinsics, ipm_w, ipm_h, crop_y, top_view_region)
     
     bev_projected_lanes, dz_dict = calculate_bev_projection.draw_bevlanes(gt_lanes, img,  gt_cam_height, gt_cam_pitch, color_list) ## returns an image array of gt lanes projected on BEV
 
-    # cv2.imwrite("/home/gautam/Thesis/E2E_3DLane_AuxNet/datasets/complete_lines_test.jpg" , bev_projected_lanes)
+    cv2.imwrite("/home/gautam/Thesis/E2E_3DLane_AuxNet/datasets/complete_lines_test.jpg" , bev_projected_lanes)
 
     ##init gt arrays for rho, phi and classification score
     gt_rho = np.zeros((int(bev_projected_lanes.shape[0]/tile_size), int(bev_projected_lanes.shape[1]/tile_size)))
@@ -380,6 +401,8 @@ def generategt_pertile(tile_size, gt_lanes, img , gt_cam_height, gt_cam_pitch):
             
             accumulator, thetas, rhos, lane_exist = HoughLine(tile_img)
             idx = np.argmax(accumulator)
+
+            #TODO:When RHO: -45(no lane) and RHO: != 45 (lane exist), verify If i need to train with -45 or 0
             rho = int(rhos[int(idx / accumulator.shape[1])])
             theta = thetas[int(idx % accumulator.shape[1])] #radians
 
@@ -414,20 +437,19 @@ def generategt_pertile(tile_size, gt_lanes, img , gt_cam_height, gt_cam_pitch):
 
     return gt_rho, gt_phi, gt_c, gt_lane_class, gt_delta_z
 
-
 #TODO: add data augmentation as per the GeoNet paper
 class Apollo3d_loader(Dataset):
-    def __init__(self, camera_intrinsics, data_root, data_splits, phase = "train", transform = False, cfg = None, args = None):
+    def __init__(self, data_root, data_splits, phase = "train", cfg = None):
         super(Apollo3d_loader, self,).__init__()
+        
+        self.cfg = cfg
         self.data_root = data_root
-        self.camera_intrinsics = camera_intrinsics
         self.data_root = data_root
         self.data_splits = data_splits
-        self.phase = phase 
-        self.transform = transform
-        self.cfg = cfg
-        self.args = args 
-
+        self.phase = phase
+        self.camera_intrinsics = self.cfg.K
+        self.h_crop = self.cfg.crop_y
+        
         if phase == "train":
             self.data_filepath = os.path.join(self.data_splits, "train.json")
         else :
@@ -461,15 +483,18 @@ class Apollo3d_loader(Dataset):
         
         if not os.path.exists(img_path):
             raise FileNotFoundError('cannot find file: {}'.format(img_path))
-        """
-        Things I need to do here::: 
-        1. Normalise the image.
-        2. Resize it as per the 2d model need. 
-
         
-        """
         img = cv2.imread(img_path)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        
+        #crop
+        img = img[:self.cfg.org_h - self.h_crop, :self.cfg.org_w]
+        #resize
+        img = cv2.resize(img, (self.cfg.resize_h, self.cfg.resize_w), interpolation=cv2.INTER_AREA)
+
+        if self.cfg.augmentation:
+            img, aug_mat = data_aug_rotate(img)
+            batch.update({"aug_mat": torch.from_numpy(aug_mat)})
 
         gt_camera_height = gtdata['cam_height'] 
         gt_camera_pitch =gtdata['cam_pitch']
@@ -481,20 +506,21 @@ class Apollo3d_loader(Dataset):
         gt_lanelines = gtdata['laneLines']
         batch.update({'gt_lanelines':gt_lanelines})
 
-        gt_lateral_offset, gt_lateral_angleoffset, gt_cls_score, gt_lane_class, gt_delta_z = generategt_pertile(32, gt_lanelines, img, gt_camera_height, gt_camera_pitch)
+        gt_lateral_offset, gt_lateral_angleoffset, gt_cls_score, gt_lane_class, gt_delta_z = generategt_pertile(gt_lanelines, img, gt_camera_height, gt_camera_pitch, self.cfg)
 
         batch.update({'gt_rho':torch.from_numpy(gt_lateral_offset)})
         batch.update({'gt_phi':torch.from_numpy(gt_lateral_angleoffset)})
         batch.update({'gt_clscore':torch.from_numpy(gt_cls_score)})
         batch.update({'gt_lane_class':torch.from_numpy(gt_lane_class)})
         batch.update({'gt_delta_z':torch.from_numpy(gt_delta_z)})
-        #TODO: add transforms normalize the image and BGR to RGB and update the other data accordingly
         
         #convert the image to tensor
         img = transforms.ToTensor()(img)
         img = img.float()
+        img = transforms.Normalize(mean= self.cfg.img_mean, std=self.cfg.img_std)(img)
+ 
         batch.update({"image":img})
-    
+
         return batch
         
 def collate_fn(batch):
@@ -525,7 +551,14 @@ def collate_fn(batch):
     gt_delta_z_data = [item['gt_delta_z'] for item in batch]
     gt_delta_z_data = torch.stack(gt_delta_z_data, dim = 0)
 
-    return [img_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data]
+    if 'aug_mat' in batch[0]:
+        aug_mat_data = [item['aug_mat'] for item in batch]
+        aug_mat_data = torch.stack(aug_mat_data, dim = 0)
+
+        return [img_data, aug_mat_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data]
+                    # 0      1                2                   3                    4                    5                 6                 7                 8          9
+    else: #no augmentation
+        return [img_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data]
 
 if __name__ == "__main__":
 
@@ -533,30 +566,25 @@ if __name__ == "__main__":
     #TODO: add the hardcoded arguments to config file later on
     data_root = '/home/gautam/e2e/lane_detection/3d_approaches/3d_dataset/Apollo_Sim_3D_Lane_Release'
     data_splits = '/home/gautam/e2e/lane_detection/3d_approaches/3d_dataset/3D_Lane_Synthetic_Dataset/old_data_splits/standard'
-    camera_intrinsics = np.array([[2015., 0., 960.],
-                       [0., 2015., 540.],
-                       [0., 0., 1.]])
-    top_view_region = np.array([[-10, 103], [10, 103], [-10, 3], [10, 3]])
-    org_h = 1080
-    org_w = 1920
-    crop_y = 0
+    config_path = '/home/gautam/Thesis/E2E_3DLane_AuxNet/configs/config_anchorless_3dlane.py'
+    
+    # top_view_region = np.array([[-10, 103], [10, 103], [-10, 3], [10, 3]])
+    # org_h = 1080
+    # org_w = 1920
+    # crop_y = 0
 
+    cfgs = Config.fromfile(config_path)
 
-    dataset = Apollo3d_loader(camera_intrinsics, data_root, data_splits)
-    loader = DataLoader(dataset, batch_size=2, shuffle=True, num_workers=2, collate_fn=collate_fn)
+    dataset = Apollo3d_loader(data_root, data_splits, cfg = cfgs)
+    loader = DataLoader(dataset, batch_size=cfgs.batch_size, shuffle=True, num_workers=cfgs.num_workers, collate_fn=collate_fn)
     
     # loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=4)
     
     for i, data in enumerate(loader):
-        print(data[0].shape)
-        print(data[6].shape)
-        print(data[8].shape)
-        # print(data[4].shape)
-        # print(data[5].shape)
-        # a = data[7].numpy()
-        # unique, counts = np.unique(a, return_counts=True)
-        # print(dict(zip(unique, counts)))
-
-
-        # print(data)
-        # print(i)
+        print("Checking the shape of the image",data[0].shape)
+        print("Checking the shape of the aug_mat",data[1].shape)
+        print("Checking the values of RHO",data[5])
+        print("Checking the values of Phi vector",data[6])
+        print("Checking teh values of cls_score",data[7])
+        print("Checking the values of lane class",data[8])
+        print("Checking the values of delta_z",data[9])

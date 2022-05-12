@@ -1,6 +1,5 @@
 
 from pprint import pprint
-from turtle import forward
 import torch 
 import torch.nn as nn 
 import cv2 
@@ -196,7 +195,6 @@ class ProjectiveGridGenerator(nn.Module):
             1. grid specifies the sampling pixel locations normalized by the input spatial dimensions.
             2. pixel locations need to be converted to the range (-1, 1)
         """
-
         grid = (grid - 0.5) * 2
         return grid
 
@@ -414,7 +412,6 @@ class Anchorless3DLanedetection(nn.Module):
         Average_OverallLoss = Overall_loss / batch_size
         
         return Average_OverallLoss
-
 
     def discriminative_loss(self, embedding, delta_c_gt):  
         

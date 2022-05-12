@@ -88,6 +88,7 @@ heads = dict(type = 'PlainDecoder')
 """
 3d model params (anchorless) for Apollo SIM3D dataset
 """
+color_list = [[50,1],[100,2],[150,3],[200,4],[250,5],[255,6]] #(color, lane_class)
 org_h = 1080
 org_w = 1920
 crop_y = 0
@@ -96,6 +97,11 @@ resize_w = 480
 
 ipm_h = 208 * 2
 ipm_w = 128 * 2 
+
+augmentation = True
+img_mean = [0.485, 0.456, 0.406] 
+img_std = [0.229, 0.224, 0.225]
+
 #init camera height and pitch
 cam_height = 1.55
 pitch = 3 #degrees
@@ -105,11 +111,15 @@ K = np.array([[2015., 0., 960.],
                        [0., 2015., 540.],
                        [0., 0., 1.]])
 
+#TODO: change the top view region as per Genlanenet
 top_view_region = np.array([[-10, 103], [10, 103], [-10, 3], [10, 3]])
 batch_norm = True #bev encoder
 embedding_dim = 4 
 
 ##### Loss function params 
+### regression and classification offsets and angles
+n_bins = 10
+
 # Discriminative Loss 
 
 #TODO: Change the values as per the GEOnet paper
@@ -131,7 +141,8 @@ May be to process the masks for the section 3.2 I need not multiply the ipm_h an
 
 # #Hyperparams
 # epochs = 100
-batch_size = 2
+batch_size = 1
+num_workers = 1
 # l2_lambda = 1e-4
 # log_frequency_steps = 200
 # lr = 0.001 
