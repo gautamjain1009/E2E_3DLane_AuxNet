@@ -3,6 +3,12 @@ from scipy.interpolate import interp1d
 import cv2 
 import random
 
+def pprint_seconds(seconds):
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    seconds = seconds % 60
+    return f"{int(hours):1d}h {int(minutes):1d}min {int(seconds):1d}s"
+    
 def HoughLine(image):
         ''' Basic Hough line transform that builds the accumulator array
         Input : image tile (gray scale image)
@@ -79,6 +85,28 @@ def homography_g2im(cam_pitch, cam_height, K):
                       [0, np.sin(np.pi / 2 + cam_pitch), np.cos(np.pi / 2 + cam_pitch)]])
     H_g2im = np.matmul(K, np.concatenate([R_g2c[:, 0:2], [[0], [cam_height], [0]]], 1))
     return H_g2im
+
+def polar_to_catesian(pred_phi, cam_pitch, cam_height, delta_z_pred, rho_pred):
+    """
+    NOTE: this function is valid only for one tile
+    convert the polar coordinates to cartesian coordinates
+    :param pred_phi: predicted line angle
+    :param cam_pitch: camera pitch
+    :param cam_height: camera height
+    :param delta_z_pred: predicted delta z
+    :param rho_pred: predicted lateral offset
+    :return:
+    """
+    # convert the polar coordinates to cartesian coordinates
+    # theta = np.arctan(pred_phi)
+    rotation_matrix = np.array([[1, 0, 0],
+                                [0, np.cos(cam_pitch), np.sin(cam_pitch)],
+                                [0, -np.sin(cam_pitch), np.cos(cam_pitch)]])
+    translation_matrix = np.array([[rho_pred * np.cos(pred_phi), rho_pred * np.sin(pred_phi), delta_z_pred - cam_height]])
+    
+    cartesian_points = np.dot(rotation_matrix, translation_matrix) # --> (3, 1)
+
+    return cartesian_points
 
 def resample_laneline_in_y(input_lane, y_steps, out_vis=False):
     """
@@ -188,3 +216,98 @@ def data_aug_rotate(img):
     img_rot = cv2.warpAffine(img_rot, rot_mat, (img.shape[0],img.shape[1]), flags=cv2.INTER_LINEAR)
     rot_mat = np.vstack([rot_mat, [0, 0, 1]])
     return img_rot, rot_mat
+
+def homography_ipmnorm2g(top_view_region):
+
+    """
+    homography transformation from IPM normalized to ground corrdinates
+
+    Why these src points are fixed???? what do they mean by that??
+    
+    """
+    src = np.float32([[0, 0], [1, 0], [0, 1], [1, 1]]) 
+    H_ipmnorm2g = cv2.getPerspectiveTransform(src, np.float32(top_view_region))
+    return H_ipmnorm2g
+
+
+def homography_crop_resize(org_img_size, crop_y, resize_img_size):
+    """
+        compute the homography matrix transform original image to cropped and resized image
+    :param org_img_size: [org_h, org_w]
+    :param crop_y:
+    :param resize_img_size: [resize_h, resize_w]
+    :return:
+    """
+    # transform original image region to network input region
+    ratio_x = resize_img_size[1] / org_img_size[1]
+    ratio_y = resize_img_size[0] / (org_img_size[0] - crop_y)
+    H_c = np.array([[ratio_x, 0, 0],
+                    [0, ratio_y, -ratio_y*crop_y],
+                    [0, 0, 1]])
+    return H_c
+
+def homograpthy_g2im(cam_pitch, cam_height, K):
+    # transform top-view region to original image region
+    R_g2c = np.array([[1, 0, 0],
+                      [0, np.cos(np.pi / 2 + cam_pitch), -np.sin(np.pi / 2 + cam_pitch)],
+                      [0, np.sin(np.pi / 2 + cam_pitch), np.cos(np.pi / 2 + cam_pitch)]])
+    H_g2im = np.matmul(K, np.concatenate([R_g2c[:, 0:2], [[0], [cam_height], [0]]], 1))
+    return H_g2im
+
+def homography_im2ipm_norm(top_view_region, org_img_size, crop_y, resize_img_size, cam_pitch, cam_height, K):
+    """
+        Compute the normalized transformation such that image region are mapped to top_view region maps to
+        the top view image's 4 corners
+        Ground coordinates: x-right, y-forward, z-up
+        The purpose of applying normalized transformation: 1. invariance in scale change
+                                                           2.Torch grid sample is based on normalized grids
+    :param top_view_region: a 4 X 2 list of (X, Y) indicating the top-view region corners in order:
+                            top-left, top-right, bottom-left, bottom-right
+    :param org_img_size: the size of original image size: [h, w]
+    :param crop_y: pixels croped from original img
+    :param resize_img_size: the size of image as network input: [h, w]
+    :param cam_pitch: camera pitch angle wrt ground plane
+    :param cam_height: camera height wrt ground plane in meters
+    :param K: camera intrinsic parameters
+    :return: H_im2ipm_norm: the normalized transformation from image to IPM image
+    """
+
+    # compute homography transformation from ground to image (only this depends on cam_pitch and cam height)
+    H_g2im = homograpthy_g2im(cam_pitch, cam_height, K)
+    # transform original image region to network input region
+    H_c = homography_crop_resize(org_img_size, crop_y, resize_img_size)
+    H_g2im = np.matmul(H_c, H_g2im)
+
+    # compute top-view corners' coordinates in image
+    x_2d, y_2d = homographic_transformation(H_g2im, top_view_region[:, 0], top_view_region[:, 1])
+    border_im = np.concatenate([x_2d.reshape(-1, 1), y_2d.reshape(-1, 1)], axis=1)
+
+    # compute the normalized transformation
+    border_im[:, 0] = border_im[:, 0] / resize_img_size[1]
+    border_im[:, 1] = border_im[:, 1] / resize_img_size[0]
+    border_im = np.float32(border_im)
+    dst = np.float32([[0, 0], [1, 0], [0, 1], [1, 1]])
+    # img to ipm
+    H_im2ipm_norm = cv2.getPerspectiveTransform(border_im, dst)
+    # ipm to im
+    H_ipm2im_norm = cv2.getPerspectiveTransform(dst, border_im)
+    return H_im2ipm_norm, H_ipm2im_norm
+
+def homographic_transformation(Matrix, x, y):
+    """
+    Helper function to transform coordinates defined by transformation matrix
+
+    Args:
+            Matrix (multi dim - array): 3x3 homography matrix
+            x (array): original x coordinates
+            y (array): original y coordinates
+    """
+    
+    ones = np.ones((1, len(y)))
+    coordinates = np.vstack((x, y, ones))
+    trans = np.matmul(Matrix, coordinates)
+
+    x_vals = trans[0, :]/trans[2, :]
+    y_vals = trans[1, :]/trans[2, :]
+    return x_vals, y_vals
+
