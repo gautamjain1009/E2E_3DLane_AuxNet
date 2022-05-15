@@ -77,8 +77,6 @@ class ProjectiveGridGenerator(nn.Module):
         grid = (grid - 0.5) * 2
         return grid
 
-
-
 class Anchorless3DLanedetection(nn.Module):
     def __init__(self,cfg, device, input_dim =1):
         super(Anchorless3DLanedetection, self).__init__()
@@ -148,13 +146,12 @@ class Anchorless3DLanedetection(nn.Module):
         self.projective_layer = ProjectiveGridGenerator(size_top, self.M_inv)
 
         ## ----------------- BEV Encoder -----------------
-        self.bev_encoder = self.make_layers([8, 'M', 16, 'M', 32, 'M', 64, "M", 64, "M", 64], input_dim, batch_norm=True)
-        
-            #matching the bev_encoder features with gt spatial size for regression
-        self.layer1 = nn.Conv2d(64, 32, kernel_size=1, stride=1, padding=0)
-        self.layer2 = nn.Conv2d(32, 16, kernel_size=1, stride=1, padding=0)
-        self.layer3 = nn.Conv2d(16, 13, kernel_size=1, stride=1, padding=0)
+        #     
+        #NOTE::Will experiment with different modes to verify which will work better.
+        #NOTE: In Other modes except non-overlapping it is all (Conv + batch_norm + relu) no MaxPool
 
+        self.bev_encoder = self.make_layers(cfg.encode_config, input_dim, batch_norm=True)
+        
         # ----------------- embedding -----------------
         self.embedding = nn.Sequential(
             nn.Conv2d(1, 8, 1),
@@ -169,12 +166,12 @@ class Anchorless3DLanedetection(nn.Module):
             if v == 'M':
                 layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
             else:
-                conv2d = nn.Conv2d(in_channels, v, kernel_size=3, padding=1)
+                conv2d = nn.Conv2d(in_channels, v[0], kernel_size=v[1], padding=v[2], stride =v[3])
                 if batch_norm:
-                    layers += [conv2d, nn.BatchNorm2d(v), nn.ReLU(inplace=True)]
+                    layers += [conv2d, nn.BatchNorm2d(v[0]), nn.ReLU(inplace=True)]
                 else:
                     layers += [conv2d, nn.ReLU(inplace=True)]
-                in_channels = v
+                in_channels = v[0]
         return nn.Sequential(*layers)
 
     def update_projection(self, args, cam_height, cam_pitch):
@@ -231,9 +228,11 @@ class Anchorless3DLanedetection(nn.Module):
         # Extract the features from the BEV projected grid
         bev_features = self.bev_encoder(x_proj)
         print("checking the tensor shaoe ater bev_encoder: ", bev_features.shape)
-        bev_features = self.layer1(bev_features)
-        bev_features = self.layer2(bev_features)
-        bev_features = self.layer3(bev_features)
+
+        """
+        I might need to change this by non overlapping convolutions as the tiles are non overlapping
+        TODO: Verify the results in the end which way of extracting features are better for 3d lane detection
+        """
 
         return bev_features
 
@@ -409,7 +408,6 @@ if __name__ == "__main__":
     #dataloader
 
 
-
     #load model
  
     #TODO: Need to match the spatial size of the input image to the 2dmodel and thus the same goes for the 3d model 
@@ -420,7 +418,8 @@ if __name__ == "__main__":
 
 
 
-    #loss functions 
+    #loss functions
+
 
 
     #training loop
@@ -440,6 +439,3 @@ if __name__ == "__main__":
 
     o2 = model3d(o)
     print("checking the shape of the output tensor",o2.shape)
-
-
-

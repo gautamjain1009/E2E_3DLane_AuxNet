@@ -88,6 +88,24 @@ heads = dict(type = 'PlainDecoder')
 """
 3d model params (anchorless) for Apollo SIM3D dataset
 """
+encode_mode ="overlapping"
+# encode_mode = "1x1non"
+# encode_mode = "32x32non"
+# encode_mode = "1x1_mix_32X32"
+
+#(channles, K_size, padding, stride)
+if encode_mode == "overlapping":
+    encode_config = [(8,3,1,1), 'M', (16,3,1,1), 'M', (32,3,1,1), 'M', (64,3,1,1), "M", (64,3,1,1), "M", (64,3,1,1), (13,1,0,1)]
+
+elif encode_mode == "1x1non":
+    encode_config = [(8,1,0,1), (16,1,0,1), (13,1,0,1), (13,13,0,32), (13,1,0,1) ]
+
+elif encode_mode == "32x32non":
+    encode_config = [(1,32,0,32), (8,1,0,1), (16,1,0,1), (13,1,0,1)]
+
+elif encode_mode == "1x1_mix_32X32":
+    encode_config = [(8,1,0,1), (16,1,0,1), (1,32,0,32), (13,1,0,1)]
+ 
 color_list = [[50,1],[100,2],[150,3],[200,4],[250,5],[255,6]] #(color, lane_class)
 org_h = 1080
 org_w = 1920
