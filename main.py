@@ -130,7 +130,8 @@ def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, 
             seg_out = model(input_img)
         
         with Timing(timings,"seg_loss"):
-            #TODO: verify the dim of the softmax dim
+            
+            #TODO: verify the dim of the softmax dim and correct
             seg_loss = criterion(F.log_softmax(seg_out, dim =1), gt_mask.long())
             # TODO: add a condition of lane exist loss
         

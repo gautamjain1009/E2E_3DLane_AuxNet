@@ -3,12 +3,10 @@ from models.registry import build_baseline, build_aggregator, build_heads, build
 import torch 
 import torch.nn as nn
 
-def reinitialize_weights(layer_weight):
-    torch.nn.init.xavier_uniform_(layer_weight)
 
-class CombinedModel(nn.Module):
+class Combined2DModel(nn.Module):
     def __init__(self, cfg):
-        super(CombinedModel,self).__init__()
+        super(Combined2DModel,self).__init__()
 
         self.cfg = cfg
         self.backbone = build_backbone(cfg)
@@ -22,27 +20,36 @@ class CombinedModel(nn.Module):
         x = self.heads(x)
         return x
 
-def load_model(cfg, baseline = False): 
+def load_model(cfg, baseline = False, pretrained = False):     
     
+    #TODO: as per the pretrained param reinitialize the weights of the every model 
     if baseline == True:
         model = build_baseline(cfg.net, cfg)
 
-        #reinitialize model weights
-        for name, layer in model.named_modules():
-            if isinstance(layer,torch.nn.Conv2d):
-                reinitialize_weights(layer.weight)
-                try: 
-                    layer.bias.data.fill_(0.01)  
-                except: ## TODO: Verify one layers bias is NONE for baseline 
-                    pass 
-                
-            elif isinstance(layer, torch.nn.Linear):
-                reinitialize_weights(layer.weight)
-                layer.bias.data.fill_(0.01)
-        return model
- 
     else: 
         # build combined model with backbone, aggegator, and heads
-        model = CombinedModel(cfg)        
-        
-        return model
+        model = Combined2DModel(cfg)        
+    
+    if pretrained == False:
+        model.apply(initialize_weights)
+        print("=> Initialized model weights")
+    else:
+        # load the pretrained weights 
+        model.load_state_dict(torch.load(cfg.pretrained_2dmodel_path))
+        pass 
+     
+    return model
+
+def initialize_weights(m):
+  if isinstance(m, nn.Conv2d):
+      nn.init.kaiming_uniform_(m.weight.data,nonlinearity='relu')
+      if m.bias is not None:
+          nn.init.constant_(m.bias.data, 0)
+  elif isinstance(m, nn.BatchNorm2d):
+      nn.init.constant_(m.weight.data, 1)
+      nn.init.constant_(m.bias.data, 0)
+  elif isinstance(m, nn.Linear):
+      nn.init.kaiming_uniform_(m.weight.data)
+      nn.init.constant_(m.bias.data, 0)
+    
+    

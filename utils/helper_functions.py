@@ -310,4 +310,3 @@ def homographic_transformation(Matrix, x, y):
     x_vals = trans[0, :]/trans[2, :]
     y_vals = trans[1, :]/trans[2, :]
     return x_vals, y_vals
-
