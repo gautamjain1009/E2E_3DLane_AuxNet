@@ -109,6 +109,18 @@ class TusimpleLoader(Dataset):
         result = LaneEval.bench_one_submit(pred_filename, self.cfg.test_json_file)
         
         return result
+    
+    def binary_segmask(self,mask_i):    
+        #assuming there are at max 6 lanes in the dataset
+
+        mask_i[mask_i ==1] = 1
+        mask_i[mask_i ==2] = 1
+        mask_i[mask_i ==3] = 1
+        mask_i[mask_i ==4] = 1
+        mask_i[mask_i ==5] = 1
+        mask_i[mask_i ==6] = 1
+    
+        return mask_i 
 
     def __len__(self):
         return len(self.data)
@@ -132,21 +144,29 @@ class TusimpleLoader(Dataset):
             
             label = cv2.imread(sample['mask_path'],cv2.IMREAD_UNCHANGED)
             
+            # print("checking the shape of the raw label",label.shape)
+
             if len(label.shape) >2: #reducing the channels in the segmentation mask
-                label = label[:,:,0] 
+                label = label[:,:,0]
+            # print("before squeeze",label.shape) 
             label = label.squeeze()
-            
+            # print("after squeeze",label.shape)
             label = label[self.cfg.cut_height:, :]
             batch.update({'mask': label})
-        
+
         #TODO: enable lanedata
         # batch.update({'lanes':sample['lanes']})
             
         #augmentation
         if self.transform:
             batch = self.process(batch)
+
+            binary_mask = self.binary_segmask(batch['mask'])
+            batch.update({'binary_mask': binary_mask})
         else:
             batch = batch
+            binary_mask = self.binary_segmask(batch['mask'])
+            batch.update({'binary_mask': binary_mask})
         
         batch.update({'full_img_path':sample['img_path']})
         return batch 
