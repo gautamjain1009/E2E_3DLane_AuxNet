@@ -90,7 +90,7 @@ class LaneVisualisation(object):
         lanes = []
         probmaps = probmaps[1:, ...]
         if exists is None:
-            exists = [True for _ in probmaps]
+            exists = [True for _ in probmaps]       
         for probmap, exist in zip(probmaps, exists):
             if exist == 0:
                 continue
@@ -135,9 +135,7 @@ class LaneVisualisation(object):
                 raise FileNotFoundError('cannot find image: {}'.format(img_path))
         
         orig_image = cv2.imread(img_path)
-        
         pred_2_lane = self.get_lanes(predictions)[0]
-
         lanes = [lane.to_array(self.cfg) for lane in pred_2_lane] ## TODO: Verify if working in my case
         
         for lane in lanes:

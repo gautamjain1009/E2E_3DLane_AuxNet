@@ -187,6 +187,7 @@ class Anchorless3DLanedetector(nn.Module):
             self.M_inv[i] = torch.matmul(aug_mats[i], self.M_inv[i])
 
     def forward(self,x):
+        output = {} 
 
         cam_height = self.cam_height
         cam_pitch = self.cam_pitch
@@ -206,149 +207,14 @@ class Anchorless3DLanedetector(nn.Module):
         # Extract the features from the BEV projected grid
         bev_features = self.bev_encoder(x_proj)
         # print("checking the tensor shaoe ater bev_encoder: ", bev_features.shape)
-
-        return bev_features
-
-    def classification_regression_loss(self, rho_pred, rho_gt, delta_z_pred, delta_z_gt, cls_pred, cls_gt, phi_pred, phi_gt ):
-        """"
-        Params:
-            rho_pred: predicted rho [batch_size,13,8]
-            rho_gt: ground truth rho [batch_size,13,8]
-            delta_z_pred: predicted delta_z [batch_size,13,8]
-            delta_z_gt: ground truth delta_z [batch_size,13,8]
-            cls_pred: predicted cls [batch_size,13,8]
-            cls_gt: ground truth cls [batch_size,13,8]
-            phi_pred: predicted phi [batch_size,10,13,8]
-            phi_gt: ground truth phi [batch_size,10,13,8]
-
-        return:
-            Angle_loss: loss for angle regression (Cross entropy loss for phi vector) + l1 loss for phi vector
-            offset_loss: l1 loss for delta_z + l1 loss for rho
-            score_loss: BCE loss for cls_score regression
-
-            Overall_loss: score_loss + c_ij * Angle_loss + c_ij * offset_loss
-        """
-
-        L1loss= nn.L1Loss()
-        BCEloss = nn.BCEWithLogitsLoss()
-        CEloss = nn.CrossEntropyLoss()
         
-        batch_size = rho_pred.shape[0]
+        output.update({"embed_out": embedding_features, "bev_out": bev_features})
 
-        #VALIDATE & TODO: manage the datatypes later for the loss calculation for training 
-        Overall_loss = torch.tensor(0, dtype = cls_pred.dtype, device = cls_pred.device)
-        
-        #TODO: change the condition for loops(as per the shape of the tile grid)
-        for b in range(rho_pred.shape[0]):
-            for i in range(rho_pred.shape[1]): # 13 times 
-                for j in range(rho_pred.shape[2]): # 8 times
-                    #----------------- Offsets loss----------
-                    loss_rho_ij = L1loss(rho_pred[b,i,j],rho_gt[b,i,j])
-                    loss_delta_z_ij = L1loss(delta_z_pred[b,i,j], delta_z_gt[b,i,j])
-                    
-                    offsetsLoss_ij = loss_rho_ij + loss_delta_z_ij 
-                    
-                    #----------------classification score loss---------
-                    loss_score_ij = BCEloss(cls_pred[b,i,j], cls_gt[b,i,j])
-                    
-                    #--------------- Line angle loss ------------------
-                    #TODO: add delta phi loss with indicator function
-                    loss_phi_ij = CEloss(phi_pred[b,:,i,j].reshape(1,10),phi_gt[b,:,i,j].reshape(1,10))
-                    
-                    Lineangle_loss = loss_phi_ij
-                    
-                    #----------------Overall loss -------------------
-                    Overall_loss_ij =  loss_score_ij + cls_gt[b,i,j]* Lineangle_loss + cls_gt[b,i,j] * offsetsLoss_ij
-                    
-                    Overall_loss = Overall_loss + Overall_loss_ij 
-            
-    #         #TODO: Verify if I need to divid this loss for one batch by grid_w * grid_h
-    #         Overall_loss = Overall_loss/ (rho_pred.shape[1]* rho_pred.shape[2])
-        Average_OverallLoss = Overall_loss / batch_size
-        
-        return Average_OverallLoss
-
-    def discriminative_loss(self, embedding, delta_c_gt):  
-        
-        """
-        Embedding == f_ij 
-        delta_c = del_i,j for classification if that tile is part of the lane or not
-        """
-        pull_loss = torch.tensor(0 ,dtype = embedding.dtype, device = embedding.device)
-        push_loss = torch.tensor(0, dtype = embedding.dtype, device = embedding.device)
-        
-        #iterating over batches
-        for b in range(embedding.shape[0]):
-            
-            embedding_b = embedding[b]  #---->(4,H*,W*)
-            delta_c_gt_b = delta_c_gt[b] # will be a tensor of size (13,8) or whatever the grid size is consits of lane labels
-            
-            #delta_c_gt ---> [batch_size, 13, 8] where every element tells you which lane you belong too. 
-
-            ##TODO: Add condition for 0 class
-            labels = torch.unique(delta_c_gt_b) #---> array of type of labels
-            num_lanes = len(labels)
-            
-            if num_lanes==0:
-                _nonsense = embedding.sum()
-                _zero = torch.zeros_like(_nonsense)
-                pull_loss = pull_loss + _nonsense * _zero
-                push_loss = push_loss + _nonsense * _zero
-                continue
-
-            centroid_mean = []
-            for lane_c in labels: # it will run for the number of lanes basically l_c = 1,2,3,4,5 
-                
-                #1. Obtain one hot tensor for tile class labels
-                delta_c = torch.where(delta_c_gt_b==lane_c,1,0) # bool tensor for lane_c ----> size (13,8)
-    
-                tensor, count = torch.unique(delta_c, return_counts=True)
-                N_c = count[1].item() # number of tiles in lane_c
-                
-                patchwise_mean = []
-                
-                #extracting tile patches from the embedding tensor
-                for r in range(0,embedding_b.shape[1],self.tile_size):
-                    for c in range(0,embedding_b.shape[2],self.tile_size):
-                        
-                        f_ij = embedding_b[:,r:r+self.tile_size,c:c+self.tile_size] #----> (4,32,32) 
-                        f_ij = f_ij.reshape(f_ij.shape[0], f_ij.shape[1]*f_ij.shape[2])
-                        
-                        #2. calculate mean for lane_c (mu_c) patchwise
-                        mu_c = torch.sum(f_ij * delta_c[int(r/self.tile_size),int(c/self.tile_size)], dim = 1)/N_c #--> (4) mu for all the four embeddings
-                        patchwise_mean.append(mu_c)
-                        #3. calculate the pull loss patchwise
-                        
-                        pull_loss = pull_loss + torch.mean(F.relu( delta_c[int(r/self.tile_size),int(c/self.tile_size)] * torch.norm(f_ij-mu_c.reshape(4,1),dim = 0)- self.delta_pull)**2) / num_lanes
-                        
-                patchwise_centroid = torch.stack(patchwise_mean) #--> (32*32,4)
-                patchwise_centroid = torch.mean(patchwise_centroid, dim =0) #--> (4)
-                
-                centroid_mean.append(patchwise_centroid)
-
-            centroid_mean = torch.stack(centroid_mean) #--> (num_lanes,4)
-
-            if num_lanes > 1:
-                
-                #4. calculate the push loss
-                centroid_mean_A = centroid_mean.reshape(-1,1, 4)
-                centroid_mean_B =centroid_mean.reshape(1,-1, 4)
-
-                dist = torch.norm(centroid_mean_A-centroid_mean_B, dim = 2) #--> (num_lanes,num_lanes)
-                dist = dist + torch.eye(num_lanes, dtype = dist.dtype, device = dist.device) * self.delta_push
-                
-                #divide by 2 to compensate the double loss calculation
-                push_loss = push_loss + torch.sum(F.relu(-dist + self.delta_push)**2) / (num_lanes * (num_lanes-1)) / 2
-        
-        pull_loss= pull_loss / self.batch_size
-        push_loss = push_loss / self.batch_size
-
-        return pull_loss, push_loss
+        return output
 
 def load_3d_model(cfg, device, pretrained = False):
     
     if pretrained == True:
-        #TODO: Load the pretrained weights for the model
         model = Anchorless3DLanedetector(cfg, device)
         model.load_state_dict(torch.load(cfg.MODEL_PATH))
         
@@ -357,7 +223,6 @@ def load_3d_model(cfg, device, pretrained = False):
         #reinitialise the weights
         for m in model.modules():
             if isinstance(m, nn.Conv2d):
-
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
             
             elif isinstance(m, nn.BatchNorm2d):
@@ -367,7 +232,6 @@ def load_3d_model(cfg, device, pretrained = False):
             elif isinstance(m, nn.Linear):
                 nn.init.normal_(m.weight, 0, 0.01)
                 nn.init.constant_(m.bias, 0)
-                
+        print("=> Initialized the anchorless 3d lane detection model weights")
             
-
     return model 

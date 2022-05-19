@@ -32,7 +32,7 @@ def load_model(cfg, baseline = False, pretrained = False):
     
     if pretrained == False:
         model.apply(initialize_weights)
-        print("=> Initialized model weights")
+        print("=> Initialized 2d model weights")
     else:
         # load the pretrained weights 
         model.load_state_dict(torch.load(cfg.pretrained_2dmodel_path))
