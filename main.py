@@ -32,7 +32,26 @@ def pprint_seconds(seconds):
     seconds = seconds % 60
     return f"{int(hours):1d}h {int(minutes):1d}min {int(seconds):1d}s"
 
-def visualizaton(model, device, data_loader):
+
+def binaryMaskIOU_(mask1, mask2):
+    mask1_area = torch.count_nonzero(mask1)
+    mask2_area = torch.count_nonzero(mask2)
+    intersection = torch.count_nonzero(torch.logical_and(mask1, mask2))
+    iou = intersection / (mask1_area + mask2_area - intersection)
+    return iou
+
+def binaryMaskIOU_batch(pred, gt):
+
+    batch_IOU = []
+    for b in range(pred.shape[0]):
+        pred_mask_i = pred[b,:,:]
+        gt_mask_i = gt[b,:,:]
+
+        batch_IOU.append(binaryMaskIOU_(pred_mask_i, gt_mask_i))
+    
+    return torch.mean(torch.stack(batch_IOU))
+
+def visualizaton(model, device, data_loader,cfg):
     model.eval()
     print(">>>>>>>visualization<<<<<<")
     with torch.no_grad():
@@ -45,19 +64,55 @@ def visualizaton(model, device, data_loader):
             predictions = {}
             vis_pred = model(vis_image)
             # print(vis_pred[0:1, :, :, :].shape)
+            
             images = []
-            for i in range(cfg.batch_size):
-
-                predictions.update({"seg":vis_pred[i:i+1, :, :, :] })
+            if cfg.train_type == "multi_class":
+            
                 
-                vis_img = vis.draw_lines(orig_image_path[i], predictions)
-                # vis_image_path = "/home/gautam/Thesis/E2E_3DLane_AuxNet/vis_test/test" + str(i) + ".jpg"
-                
-                images.append(vis_img)
+                for i in range(cfg.batch_size):
 
-            wandb.log({"validate Predictions":[wandb.Image(image) for image in images]})
+                    predictions.update({"seg":vis_pred[i:i+1, :, :, :] })
+                    
+                    vis_img = vis.draw_lines(orig_image_path[i], predictions)
+                    # vis_image_path = "/home/gautam/Thesis/E2E_3DLane_AuxNet/vis_test/test" + str(i) + ".jpg"
+                    
+                    images.append(vis_img)
 
-            break 
+                wandb.log({"validate Predictions":[wandb.Image(image) for image in images]})
+                break
+            
+            elif cfg.train_type == "binary":
+                #TODO:
+                """
+                Loop over the batch of the pred mask and visualize it on the original image
+                """
+                images = []
+                for i in range(cfg.batch_size):
+                    #let us suppose our batch size is 8 then 
+
+                    pred_mask_i = vis_pred[i, :, :, :] #--- > (2,h,W)
+                    pred_mask_i = torch.max(pred_mask_i, dim = 0)[0] #--- > (h,W)
+                    
+                    a,b = torch.unique(pred_mask_i, return_counts = True)
+                    # print(a)
+                    # print(b)
+                    
+                    pred_mask_i = pred_mask_i.cpu().numpy()
+                    # print(np.unique(pred_mask_i))
+                    pred_mask_i[np.where(pred_mask_i ==1)] = 255
+                    pred_mask_i = pred_mask_i.astype(np.uint8)
+
+                    pred_mask_i = cv2.resize(pred_mask_i, (cfg.ori_img_w, cfg.ori_img_h), interpolation=cv2.INTER_NEAREST)
+                    
+                    pred_mask_i = cv2.merge((pred_mask_i, pred_mask_i, pred_mask_i))
+
+                    org_image = cv2.imread(orig_image_path[i])
+        
+                    vis_img = cv2.addWeighted(org_image,0.5, pred_mask_i,0.5,0)
+                    images.append(vis_img)
+
+                wandb.log({"validate Predictions":[wandb.Image(image) for image in images]})
+                break
 
 def validate(model, device, data_loader, loss_f, cfg):
     model.eval()         
@@ -68,20 +123,29 @@ def validate(model, device, data_loader, loss_f, cfg):
     with torch.no_grad():
         val_pred = []
         pred_out = {}
+        Iou_batch_list = []
 
         for val_itr, val_data in enumerate(data_loader):
             
-            val_gt_mask = val_data['mask'].to(device)
+            val_gt_mask = val_data['binary_mask'].to(device).float()
             val_img = val_data['img'].to(device)
             
             val_seg_out = model(val_img)
             pred_out.update({'seg':val_seg_out})
-            pred_out_list = vis.get_lanes(pred_out)
             
-            val_pred.extend(pred_out_list)
-            
-            val_seg_loss = loss_f(F.log_softmax(val_seg_out, dim =1), val_gt_mask.long())
+            if cfg.train_type == "multi_class":
+                pred_out_list = vis.get_lanes(pred_out)
+                val_pred.extend(pred_out_list)
 
+            else:
+                #calcualte IOU
+                metric_batch = binaryMaskIOU_batch(val_seg_out, val_gt_mask)
+                Iou_batch_list.append(metric_batch)
+            
+            val_seg_loss = loss_f(torch.max(val_seg_out, dim =1)[0], val_gt_mask)
+
+            #NOTE: To be used when not using binary segmentation
+            # val_seg_loss = loss_f(F.log_softmax(val_seg_out, dim =1), val_gt_mask.long())
             val_batch_loss = val_seg_loss.detach().cpu()/cfg.batch_size
 
             val_loss += val_batch_loss
@@ -89,14 +153,18 @@ def validate(model, device, data_loader, loss_f, cfg):
             if (val_itr+1) % 10 == 0:
                 val_running_loss = val_loss.item() / (val_itr+1)
                 print(f"Validation: {val_itr+1} steps of ~{val_loader_len}.  Validation Running Loss {val_running_loss:.4f}")    
-            
+
+        val_data_IOU = torch.mean(torch.stack(Iou_batch_list))
+
         val_avg_loss = val_loss / (val_itr+1)
         print(f"Validation Loss: {val_avg_loss}")
 
-    return val_avg_loss, val_pred
+    return val_avg_loss, val_pred, val_data_IOU
+   
 
 def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, cfg, criterion):
-    metric = 0 
+    metric = 0
+    Iou = 0.0
     batch_loss = 0.0
     tr_loss = 0.0
     start_point = time.time()
@@ -122,17 +190,19 @@ def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, 
         optimizer.zero_grad(set_to_none=True)
         
         with Timing(timings, "inputs_to_GPU"):
-            gt_mask = data['mask'].to(device)
-            # print(gt_mask.shape)
+            gt_mask = data['binary_mask'].to(device).float()
+
             input_img = data['img'].to(device)
             
         with Timing(timings,"forward_pass"):
             seg_out = model(input_img)
-        
+
         with Timing(timings,"seg_loss"):
             
-            #TODO: verify the dim of the softmax dim and correct
-            seg_loss = criterion(F.log_softmax(seg_out, dim =1), gt_mask.long())
+            #NOTE: to use in the case if not binary segmentation
+            # seg_loss = criterion(F.log_softmax(seg_out, dim =1), gt_mask.long())
+            seg_loss = criterion(torch.max(seg_out, dim =1)[0],gt_mask)
+            print("seg_loss_train: ", seg_loss)
             # TODO: add a condition of lane exist loss
         
         with Timing(timings,"backward_pass"):    
@@ -165,36 +235,56 @@ def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, 
 
             tr_loss = 0.0
 
-        #eval Loop 
+        # eval Loop 
         if should_run_valid:
             with Timing(timings, "validate"):
-                val_avg_loss, val_pred = validate(model, device, val_loader, criterion, cfg)
                 
+                #TODO: Later add more metrics for binary segmentation
+                val_avg_loss, val_pred, Iou_val = validate(model, device, val_loader, criterion, cfg)
+                
+                if cfg.train_type == "multi_class":
                 # evaluate 
-                pred_json_save_path = "/home/gautam/Thesis/E2E_3DLane_AuxNet/pred_json" 
+                    pred_json_save_path = "/home/gautam/Thesis/E2E_3DLane_AuxNet/pred_json" 
+                    
+                    curr_metric = val_loader.dataset.evaluate(val_pred, pred_json_save_path)
+                    curr_acc = curr_metric["Accuracy"]
+                    print("Current Acccuracy",curr_acc)
+                    
+                    #making model checkpoints on the basis of accuracy
+                    if curr_acc> metric:
+                        metric = curr_acc
+                        print(f"Best Metric for Epoch:{epoch+1} and train itr. {itr} is: {curr_metric} ")
+
+                        print(">>>>>>>>Creating model Checkpoint<<<<<<<")
+                        checkpoint_save_file = cfg.train_run_name + str(val_avg_loss.item()) +"_" + str(epoch+1) + ".pth"
+                        checkpoint_save_path = os.path.join(checkpoints_dir,checkpoint_save_file)
+
+                        torch.save(model.state_dict(),checkpoint_save_path)
                 
-                curr_metric = val_loader.dataset.evaluate(val_pred, pred_json_save_path)
-                curr_acc = curr_metric["Accuracy"]
-                print("Current Acccuracy",curr_acc)
-                
-                #making model checkpoints on the basis of accuracy
-                if curr_acc> metric:
-                    metric = curr_acc
-                    print(f"Best Metric for Epoch:{epoch+1} and train itr. {itr} is: {curr_metric} ")
+                elif cfg.train_type == "binary":
+                    #TODO:
+                    """
+                    1. Calcualte MIou
+                    2. create the model checkpoint with the besst MIou                
+                    """   
 
-                    print(">>>>>>>>Creating model Checkpoint<<<<<<<")
-                    checkpoint_save_file = cfg.train_run_name + str(val_avg_loss.item()) +"_" + str(epoch+1) + ".pth"
-                    checkpoint_save_path = os.path.join(checkpoints_dir,checkpoint_save_file)
+                    if Iou_val > Iou:
+                        Iou = Iou_val
+                        print(f"Best IOU for Epoch:{epoch+1} and train itr. {itr} is: {Iou_val} ")
 
-                    torch.save(model.state_dict(),checkpoint_save_path)
+                        print(">>>>>>>>Creating model Checkpoint<<<<<<<")
+                        checkpoint_save_file = cfg.train_run_name + str(val_avg_loss.item()) +"_" + str(epoch+1) + ".pth"
+                        checkpoint_save_path = os.path.join(checkpoints_dir,checkpoint_save_file)
 
+                        torch.save(model.state_dict(),checkpoint_save_path)
+        
             wandb.log({'Validation_loss': val_avg_loss,}, commit=False)
             
             scheduler.step(val_avg_loss.item())
 
         if should_run_vis: 
             with Timing(timings,"Visualising predictions"):
-                visualizaton(model, device, val_loader)
+                visualizaton(model, device, val_loader,cfg)
 
     #reporting epoch train time 
     print(f"Epoch {epoch+1} done! Took {pprint_seconds(time.time()- start_point)}")
@@ -250,17 +340,14 @@ if __name__ == "__main__":
     
     model = load_model(cfg, baseline = args.baseline)
     model = model.to(device)
-    # # print(model)
-    # a =torch.rand(1,3,512,512)
-    # a = a.to(device)
-    # out = model(a)
-    # print(out.shape)
-
+    
     wandb.watch(model)
 
     #segmentation loss
-    criterion = torch.nn.NLLLoss().to(device)
-    criterion_exist = torch.nn.BCEWithLogitsLoss().to(device)
+    # criterion = torch.nn.NLLLoss().to(device)
+    
+    #TODO: Add pos_weight for positive samples
+    criterion = torch.nn.BCEWithLogitsLoss().to(device)
 
     #optimizer and scheduler
     param_group = model.parameters()
@@ -269,7 +356,6 @@ if __name__ == "__main__":
                                                         threshold= cfg.lrs_thresh, verbose=True, min_lr= cfg.lrs_min,
                                                         cooldown=cfg.lrs_cd)                               
     
-    #TODO: Add a condition for model to be loaded from pretrained model if needed only for inference
     with run:
         print("==> Reporting Argparse params")
         for arg in vars(args):
