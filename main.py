@@ -1,5 +1,6 @@
 #TODO: Change the name of the script to 2D_lane_detection_train.py
 
+from contextlib import redirect_stderr
 from pprint import pprint
 import torch 
 import cv2 
@@ -32,26 +33,16 @@ def pprint_seconds(seconds):
     seconds = seconds % 60
     return f"{int(hours):1d}h {int(minutes):1d}min {int(seconds):1d}s"
 
-
-def binaryMaskIOU_(mask1, mask2):
-    mask1_area = torch.count_nonzero(mask1)
-    mask2_area = torch.count_nonzero(mask2)
-    intersection = torch.count_nonzero(torch.logical_and(mask1, mask2))
-    iou = intersection / (mask1_area + mask2_area - intersection)
-    return iou
-
-def binaryMaskIOU_batch(pred, gt):
-
-    batch_IOU = []
-    for b in range(pred.shape[0]):
-        pred_mask_i = pred[b,:,:]
-        gt_mask_i = gt[b,:,:]
-
-        batch_IOU.append(binaryMaskIOU_(pred_mask_i, gt_mask_i))
-    
-    return torch.mean(torch.stack(batch_IOU))
+def iou(mask1, mask2):
+    intersection = (mask1 * mask2).sum()
+    if intersection == 0:
+        return 0.0
+    union = torch.logical_or(mask1, mask2).to(torch.int).sum()
+    return intersection / union
 
 def visualizaton(model, device, data_loader,cfg):
+    ##TODO: add the visualization for overlays and gt also
+
     model.eval()
     print(">>>>>>>visualization<<<<<<")
     with torch.no_grad():
@@ -63,12 +54,9 @@ def visualizaton(model, device, data_loader,cfg):
 
             predictions = {}
             vis_pred = model(vis_image)
-            # print(vis_pred[0:1, :, :, :].shape)
             
             images = []
             if cfg.train_type == "multi_class":
-            
-                
                 for i in range(cfg.batch_size):
 
                     predictions.update({"seg":vis_pred[i:i+1, :, :, :] })
@@ -87,30 +75,28 @@ def visualizaton(model, device, data_loader,cfg):
                 Loop over the batch of the pred mask and visualize it on the original image
                 """
                 images = []
+                mapping = {(0, 0, 0): 0, (255, 255, 255): 1}
+                rev_mapping = {mapping[k]: k for k in mapping}
                 for i in range(cfg.batch_size):
-                    #let us suppose our batch size is 8 then 
 
                     pred_mask_i = vis_pred[i, :, :, :] #--- > (2,h,W)
-                    pred_mask_i = torch.max(pred_mask_i, dim = 0)[0] #--- > (h,W)
                     
-                    a,b = torch.unique(pred_mask_i, return_counts = True)
-                    # print(a)
-                    # print(b)
+                    pred_mask_i = torch.argmax(pred_mask_i,0) #--- > (h,W)
                     
-                    pred_mask_i = pred_mask_i.cpu().numpy()
-                    # print(np.unique(pred_mask_i))
-                    pred_mask_i[np.where(pred_mask_i ==1)] = 255
-                    pred_mask_i = pred_mask_i.astype(np.uint8)
+                    pred_image = torch.zeros(3,pred_mask_i.size(0), pred_mask_i.size(1), dtype = torch.uint8)
 
-                    pred_mask_i = cv2.resize(pred_mask_i, (cfg.ori_img_w, cfg.ori_img_h), interpolation=cv2.INTER_NEAREST)
-                    
-                    pred_mask_i = cv2.merge((pred_mask_i, pred_mask_i, pred_mask_i))
-
+                    for k in rev_mapping:
+                        pred_image[:,pred_mask_i == k] = torch.tensor(rev_mapping[k]).byte().view(3,1)
+                        pred_img = pred_image.permute(1,2,0).numpy()
+                        
+                    pred_img = cv2.resize(pred_img, (cfg.ori_img_w, cfg.ori_img_h), interpolation=cv2.INTER_NEAREST)
                     org_image = cv2.imread(orig_image_path[i])
         
-                    vis_img = cv2.addWeighted(org_image,0.5, pred_mask_i,0.5,0)
-                    images.append(vis_img)
+                    vis_img = cv2.addWeighted(org_image,0.5, pred_img,0.5,0)
 
+                    vis_img = cv2.cvtColor(vis_img, cv2.COLOR_BGR2RGB)
+                    images.append(vis_img)
+                    
                 wandb.log({"validate Predictions":[wandb.Image(image) for image in images]})
                 break
 
@@ -127,7 +113,7 @@ def validate(model, device, data_loader, loss_f, cfg):
 
         for val_itr, val_data in enumerate(data_loader):
             
-            val_gt_mask = val_data['binary_mask'].to(device).float()
+            val_gt_mask = val_data['binary_mask'].to(device).long()
             val_img = val_data['img'].to(device)
             
             val_seg_out = model(val_img)
@@ -139,14 +125,16 @@ def validate(model, device, data_loader, loss_f, cfg):
 
             else:
                 #calcualte IOU
-                metric_batch = binaryMaskIOU_batch(val_seg_out, val_gt_mask)
+                
+                metric_batch = iou(torch.argmax(val_seg_out,1), val_gt_mask)
                 Iou_batch_list.append(metric_batch)
             
-            val_seg_loss = loss_f(torch.max(val_seg_out, dim =1)[0], val_gt_mask)
+            # val_seg_loss = loss_f(torch.max(val_seg_out, dim =1)[0], val_gt_mask)
+            val_seg_loss = loss_f(val_seg_out, val_gt_mask)
 
             #NOTE: To be used when not using binary segmentation
             # val_seg_loss = loss_f(F.log_softmax(val_seg_out, dim =1), val_gt_mask.long())
-            val_batch_loss = val_seg_loss.detach().cpu()/cfg.batch_size
+            val_batch_loss = val_seg_loss.detach().cpu() / cfg.batch_size
 
             val_loss += val_batch_loss
 
@@ -190,18 +178,23 @@ def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, 
         optimizer.zero_grad(set_to_none=True)
         
         with Timing(timings, "inputs_to_GPU"):
-            gt_mask = data['binary_mask'].to(device).float()
-
+            gt_mask = data['binary_mask'].to(device).long()
+            print("gt_mask",gt_mask.shape)
             input_img = data['img'].to(device)
             
         with Timing(timings,"forward_pass"):
             seg_out = model(input_img)
-
+            
+            print("seg_putput: ", seg_out.shape)
         with Timing(timings,"seg_loss"):
             
             #NOTE: to use in the case if not binary segmentation
             # seg_loss = criterion(F.log_softmax(seg_out, dim =1), gt_mask.long())
-            seg_loss = criterion(torch.max(seg_out, dim =1)[0],gt_mask)
+            
+            #NOTE: to use in the case if binary segmentation with BCElosswithlogits
+            # seg_loss = criterion(torch.max(seg_out, dim =1)[0],gt_mask)
+            seg_loss = criterion(seg_out, gt_mask)
+
             print("seg_loss_train: ", seg_loss)
             # TODO: add a condition of lane exist loss
         
@@ -212,7 +205,7 @@ def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, 
         with Timing(timings, "optimizer step"):
             optimizer.step()
         
-        batch_loss = seg_loss.detach().cpu()/cfg.batch_size
+        batch_loss = seg_loss.detach().cpu() / cfg.batch_size #TODO: check if this is corrects if not use cfg.batch_size
         train_batch_time= multitimings.end('train_batch')
         
         #reporting model FPS
@@ -262,12 +255,8 @@ def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, 
                         torch.save(model.state_dict(),checkpoint_save_path)
                 
                 elif cfg.train_type == "binary":
-                    #TODO:
-                    """
-                    1. Calcualte MIou
-                    2. create the model checkpoint with the besst MIou                
-                    """   
-
+                    
+                    #TODO: TO verify if IOU is calcualted correctly
                     if Iou_val > Iou:
                         Iou = Iou_val
                         print(f"Best IOU for Epoch:{epoch+1} and train itr. {itr} is: {Iou_val} ")
@@ -344,10 +333,24 @@ if __name__ == "__main__":
     wandb.watch(model)
 
     #segmentation loss
-    # criterion = torch.nn.NLLLoss().to(device)
+    """
+        posweight is calculated as:
+        fraction of positve samples can be calculated as: target_mask.mean()
+        posweight = 1 - fraction of 1s/ fraction of 1          
+        """
+    if cfg.train_type == "binary":
+            
+        #NOTE: TO Use when binary segmentation and the output from the model has no activations and is just a single channel
+        pos_weight = torch.tensor([1.0,19.0]).to(device) #basically it means that I have 19 positive samples and 1 negative sample
+        # criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight).to(device)
+        criterion = torch.nn.CrossEntropyLoss(weight = pos_weight).to(device)
+
+    else:
+        # NOTE: TO use when multi class segmentation is done.
+        criterion = torch.nn.NLLLoss().to(device)
     
-    #TODO: Add pos_weight for positive samples
-    criterion = torch.nn.BCEWithLogitsLoss().to(device)
+
+
 
     #optimizer and scheduler
     param_group = model.parameters()

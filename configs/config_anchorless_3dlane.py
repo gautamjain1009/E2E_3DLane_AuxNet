@@ -17,52 +17,12 @@ cut_height = 160
 ori_img_h = 720
 ori_img_w = 1280
 
-# #for vis
-# sample_y = range(710,150, -10)
-# thr = 0.6
-
-# train_augmentation = [
-#     dict(type='RandomRotation'),
-#     dict(type='RandomHorizontalFlip'),
-#     dict(type='Resize', size=(img_width, img_height)),
-#     dict(type='Normalize', img_norm=img_norm),
-#     dict(type='ToTensor'),
-# ] 
-
-# val_augmentation = [
-#     dict(type='Resize', size=(img_width, img_height)),
-#     dict(type='Normalize', img_norm=img_norm),
-#     dict(type='ToTensor')
-# ] 
-
-# dataset_path = '/home/gautam/e2e/lane_detection/2d_approaches/dataset/tusimple'
-
-# dataset = dict(
-#     train=dict(
-#         type='TusimpleLoader',
-#         data_root=dataset_path,
-#         split='trainval',
-#         transform = train_augmentation
-#     ),
-#     val=dict(
-#         type='TusimpleLoader',
-#         data_root=dataset_path,
-#         split='test',
-#         transform = val_augmentation
-#     ),
-#     test=dict(
-#         type='TusimpleLoader',
-#         data_root=dataset_path,
-#         split='test',
-#         transform = val_augmentation
-#     )
-# )
-
 # """
 # training params
 # """
 # workers = 12
-num_classes = 6 + 1
+# num_classes = 6 + 1
+num_classes = 1 + 1 # binary segmentation
 # # ignore_label = 255
 
 # test_json_file='/home/gautam/e2e/lane_detection/2d_approaches/dataset/tusimple/test_label.json'
@@ -140,7 +100,7 @@ n_bins = 10
 
 # Discriminative Loss 
 
-#TODO: Change the values as per the GEOnet paper
+#TODO: Change the values as per the Gen_net paper
 delta_pull = 0.5 ## delta_v 
 delta_push = 3.0 ## delta_d 
 tile_size = 32

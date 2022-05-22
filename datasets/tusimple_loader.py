@@ -164,10 +164,9 @@ class TusimpleLoader(Dataset):
             binary_mask = self.binary_segmask(batch['mask'])
             batch.update({'binary_mask': binary_mask})
         else:
-            batch = batch
             binary_mask = self.binary_segmask(batch['mask'])
             batch.update({'binary_mask': binary_mask})
-        
+
         batch.update({'full_img_path':sample['img_path']})
         return batch 
 

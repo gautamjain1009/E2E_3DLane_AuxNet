@@ -61,7 +61,8 @@ dataset = dict(
 training params
 """
 workers = 12
-num_classes = 6 + 1
+num_classes = 1 + 1
+# num_classes = 6 + 1
 # ignore_label = 255
 
 test_json_file='/home/gautam/e2e/lane_detection/2d_approaches/dataset/tusimple/test_label.json'
@@ -84,14 +85,14 @@ aggregator = dict(type= "SCNN")
 heads = dict(type = 'PlainDecoder')
 
 ###logging params
-date_it = "25_March_"
-train_run_name = "r18_scnn_pdec_2dLane" + date_it
-val_frequency = 400
+date_it = "26_May_"
+train_run_name = "r18_scnn_binary_2dLane" + date_it
+val_frequency = 200
 train_log_frequency = 200
 
 #Hyperparams
 epochs = 100
-batch_size = 8 
+batch_size = 8
 l2_lambda = 1e-4
 log_frequency_steps = 200
 lr = 0.001 
@@ -102,3 +103,6 @@ lrs_patience = 3
 lrs_thresh = 1e-4
 prefetch_factor = 2
 bg_weight = 0.4 #used in the loss function to reduce the importance of one class in tusimple
+
+train_type = "binary"
+# train_type = "multiclass"

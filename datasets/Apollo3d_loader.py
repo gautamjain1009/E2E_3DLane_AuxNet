@@ -34,10 +34,6 @@ class CalculateDistanceAngleOffests(object):
         self.org_w = org_w
         self.resize_h = resize_h
         self.resize_w = resize_w
-
-        ###TODO: Activate the resizing here
-        # self.resize_h = resize_h
-        # self.resize_w = resize_w
         
         self.ipm_w = ipm_w
         self.ipm_h = ipm_h
@@ -65,7 +61,7 @@ class CalculateDistanceAngleOffests(object):
         H_g2im = homography_g2im(gt_cam_pitch, gt_cam_height, self.K)
         H_im2ipm = np.linalg.inv(np.matmul(self.H_crop, np.matmul(H_g2im, self.H_ipm2g)))
 
-        print("Checking the shape of original image: ", img.shape)
+        # print("Checking the shape of original image: ", img.shape)
 
         img = cv2.warpPerspective(img, self.H_crop, (self.resize_w, self.resize_h))
         # print("Checking the shape of cropped image: ", img.shape)     
@@ -169,7 +165,7 @@ def generategt_pertile(gt_lanes, img , gt_cam_height, gt_cam_pitch, cfg):
 
     # cv2.imwrite("/home/gautam/Thesis/E2E_3DLane_AuxNet/datasets/complete_lines_test.jpg" , bev_projected_lanes)
 
-    ##init gt arrays for rho, phi and classification score
+    ##init gt arrays for rho, phi and classification score and delta_z
     gt_rho = np.zeros((int(bev_projected_lanes.shape[0]/tile_size), int(bev_projected_lanes.shape[1]/tile_size)))
     gt_phi = np.zeros((n_bins, int(bev_projected_lanes.shape[0]/tile_size), int(bev_projected_lanes.shape[1]/tile_size)))
     gt_c = np.zeros((int(bev_projected_lanes.shape[0]/tile_size), int(bev_projected_lanes.shape[1]/tile_size)))
@@ -260,7 +256,7 @@ class Apollo3d_loader(Dataset):
         
         if phase == "train":
             self.data_filepath = os.path.join(self.data_splits, "train.json")
-        else :
+        elif phase == "test":
             self.data_filepath = os.path.join(self.data_splits, "test.json")
         
         self.load_dataset()
