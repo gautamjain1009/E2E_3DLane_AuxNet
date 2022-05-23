@@ -89,9 +89,12 @@ def visualizaton(model, device, data_loader,cfg):
                         pred_image[:,pred_mask_i == k] = torch.tensor(rev_mapping[k]).byte().view(3,1)
                         pred_img = pred_image.permute(1,2,0).numpy()
                         
-                    pred_img = cv2.resize(pred_img, (cfg.ori_img_w, cfg.ori_img_h), interpolation=cv2.INTER_NEAREST)
+                    pred_img = cv2.resize(pred_img, (cfg.ori_img_w, cfg.ori_img_h - cfg.cut_height), interpolation=cv2.INTER_NEAREST)
+                    
+                    #TODO: Add cut height param from config to be used for visualization as it is not correct right now.
                     org_image = cv2.imread(orig_image_path[i])
-        
+                    org_image = org_image[cfg.cut_height:, :, :]
+
                     vis_img = cv2.addWeighted(org_image,0.5, pred_img,0.5,0)
 
                     vis_img = cv2.cvtColor(vis_img, cv2.COLOR_BGR2RGB)
