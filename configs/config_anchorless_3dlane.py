@@ -112,22 +112,22 @@ May be to process the masks for the section 3.2 I need not multiply the ipm_h an
 """
 
 # ###logging params
-# date_it = "25_March_"
-# train_run_name = "Anchorless3DLane" + date_it
-# val_frequency = 400
-# train_log_frequency = 200
+date_it = "25_March_"
+train_run_name = "Anchorless3DLane" + date_it
+val_frequency = 400
+train_log_frequency = 200
 
 # #Hyperparams
-# epochs = 100
-batch_size = 1
-num_workers = 1
-# l2_lambda = 1e-4
-# log_frequency_steps = 200
-# lr = 0.001 
-# lrs_cd = 0
-# lrs_factor = 0.75
-# lrs_min = 1e-6
-# lrs_patience = 3
-# lrs_thresh = 1e-4
-# prefetch_factor = 2
-# bg_weight = 0.4 #used in the loss function to reduce the importance of one class in tusimple
+epochs = 100
+batch_size = 3
+num_workers = 2
+l2_lambda = 1e-4
+log_frequency_steps = 200
+lr = 0.001 
+lrs_cd = 0
+lrs_factor = 0.75
+lrs_min = 1e-6
+lrs_patience = 3
+lrs_thresh = 1e-4
+prefetch_factor = 2
+bg_weight = 0.4 #used in the loss function to reduce the importance of one class in tusimple

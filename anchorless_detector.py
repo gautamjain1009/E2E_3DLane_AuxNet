@@ -152,7 +152,7 @@ class Anchorless3DLanedetector(nn.Module):
                 in_channels = v[0]
         return nn.Sequential(*layers)
 
-    def update_projection(self, args, cam_height, cam_pitch):
+    def update_projection(self, cfg, cam_height, cam_pitch):
         print("updating the projection matrix with gt cam_height and cam_pitch")
         """
             Update transformation matrix based on ground-truth cam_height and cam_pitch
@@ -162,10 +162,10 @@ class Anchorless3DLanedetector(nn.Module):
         :param cam_pitch:
         :return:
         """
-        for i in range(self.batch_size):
-            M, M_inv = homography_im2ipm_norm(args.top_view_region, np.array([args.org_h, args.org_w]),
-                                                args.crop_y, np.array([args.resize_h, args.resize_w]),
-                                                cam_pitch[i].data.cpu().numpy(), cam_height[i].data.cpu().numpy(), args.K)
+        for i in range(cfg.batch_size):
+            M, M_inv = homography_im2ipm_norm(cfg.top_view_region, np.array([cfg.org_h, cfg.org_w]),
+                                                cfg.crop_y, np.array([cfg.resize_h, cfg.resize_w]),
+                                                cam_pitch[i].detach().cpu().numpy(), cam_height[i].detach().cpu().numpy(), cfg.K)
             self.M_inv[i] = torch.from_numpy(M_inv).type(torch.FloatTensor)
         self.cam_height = cam_height
         self.cam_pitch = cam_pitch
@@ -176,8 +176,8 @@ class Anchorless3DLanedetector(nn.Module):
             Need to consider both the cases of 1. when using ground-truth cam_height, cam_pitch, update M_inv
                                                2. when cam_height, cam_pitch are online estimated, update H_c for later use
         """
-        if not self.no_cuda:
-            aug_mats = aug_mats.cuda()
+        # if not self.no_cuda:
+        #     aug_mats = aug_mats.cuda()
 
         for i in range(aug_mats.shape[0]):
             # update H_c directly

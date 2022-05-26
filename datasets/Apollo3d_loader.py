@@ -214,10 +214,10 @@ def generategt_pertile(gt_lanes, img , gt_cam_height, gt_cam_pitch, cfg):
             x_idx = int(r/tile_size)
             y_idx = int(c/tile_size)
             gt_rho[x_idx,y_idx] = rho
-    
+
             phi_vec = binprob(n_bins, theta)
             gt_phi[:,x_idx,y_idx][:, np.newaxis] = phi_vec
-
+                
             if lane_exist == True:
                 gt_c[x_idx,y_idx] = 1
                 gt_delta_z[x_idx,y_idx] = mean_del_z
@@ -299,11 +299,11 @@ class Apollo3d_loader(Dataset):
             img, aug_mat = data_aug_rotate(img)
             batch.update({"aug_mat": torch.from_numpy(aug_mat)})
 
-        gt_camera_height = gtdata['cam_height'] 
-        gt_camera_pitch =gtdata['cam_pitch']
+        gt_camera_height = np.array(gtdata['cam_height'])
+        gt_camera_pitch =np.array(gtdata['cam_pitch'])
 
-        batch.update({"gt_height":gt_camera_height})
-        batch.update({"gt_pitch":gt_camera_pitch})
+        batch.update({"gt_height":torch.from_numpy(gt_camera_height)})
+        batch.update({"gt_pitch":torch.from_numpy(gt_camera_pitch)})
         
         #TODO: correct the data representation of lane points while in the need of visulization
         gt_lanelines = gtdata['laneLines']
@@ -334,9 +334,12 @@ def collate_fn(batch):
     img_data = [item['image'] for item in batch]
     img_data = torch.stack(img_data, dim = 0)
     
-    #TODO: stack them in the form of tensors if needed
     gt_camera_height_data = [item['gt_height'] for item in batch]
+    gt_camera_height_data = torch.stack(gt_camera_height_data, dim = 0)
+
     gt_camera_pitch_data = [item['gt_pitch'] for item in batch]
+    gt_camera_pitch_data = torch.stack(gt_camera_pitch_data, dim = 0)
+
     gt_lanelines_data = [item['gt_lanelines'] for item in batch] #need to check the data representation of lanelines (vis)
     
     gt_rho_data = [item['gt_rho'] for item in batch]
@@ -384,10 +387,15 @@ if __name__ == "__main__":
     # loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=4)
     
     for i, data in enumerate(loader):
-        print("Checking the shape of the image",data[0].shape)
-        print("Checking the shape of the aug_mat",data[1].shape)
-        print("Checking the values of RHO",data[5])
-        print("Checking the values of Phi vector",data[6])
-        print("Checking teh values of cls_score",data[7])
-        print("Checking the values of lane class",data[8])
-        print("Checking the values of delta_z",data[9])
+        # print("Checking the shape of the image",data[0].shape)
+        # print("Checking the shape of the aug_mat",data[1].shape)
+        # print("Checking the values of RHO",data[5])
+        # print("Checking the values of Phi vector",data[6])
+        # print("Checking teh values of cls_score",data[7])
+        # print("Checking the values of lane class",data[8])
+        # print("Checking the values of delta_z",data[9])
+        # print("phi_ij",data[6][:,:,3,0])
+        # print(data[2][0])
+        print(data[1])
+        print(data[1].shape)
+        print(data[1].dtype)

@@ -187,8 +187,8 @@ def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, 
             
         with Timing(timings,"forward_pass"):
             seg_out = model(input_img)
-            
-            print("seg_putput: ", seg_out.shape)
+            print(seg_out)
+
         with Timing(timings,"seg_loss"):
             
             #NOTE: to use in the case if not binary segmentation
@@ -208,7 +208,7 @@ def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, 
         with Timing(timings, "optimizer step"):
             optimizer.step()
         
-        batch_loss = seg_loss.detach().cpu() / cfg.batch_size #TODO: check if this is corrects if not use cfg.batch_size
+        batch_loss = seg_loss.detach().cpu() / cfg.batch_size
         train_batch_time= multitimings.end('train_batch')
         
         #reporting model FPS
