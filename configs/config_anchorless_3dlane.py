@@ -131,3 +131,7 @@ lrs_patience = 3
 lrs_thresh = 1e-4
 prefetch_factor = 2
 bg_weight = 0.4 #used in the loss function to reduce the importance of one class in tusimple
+
+#TODO: try different combination later as per the gradients and in the end try to balance them
+w_clustering_Loss = 0.3
+w_classification_Loss = 0.7

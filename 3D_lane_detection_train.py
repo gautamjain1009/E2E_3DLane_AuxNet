@@ -27,7 +27,7 @@ from anchorless_detector import load_3d_model
 
 def classification_regression_loss(L1loss, BCEloss, CEloss, rho_pred, rho_gt, delta_z_pred, delta_z_gt, cls_pred, cls_gt, phi_pred, phi_gt ):
         """"
-        Params:
+        Params: (Here 13x8 is the grid size of tiles as per the spatial size of one tile)
             rho_pred: predicted rho [batch_size,13,8]
             rho_gt: ground truth rho [batch_size,13,8]
             delta_z_pred: predicted delta_z [batch_size,13,8]
@@ -223,11 +223,11 @@ if __name__ == "__main__":
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.num_workers, collate_fn = collate_fn, pin_memory=True)
 
     # # TODO: split the test set into val and test set after the training is verified.
-    # val_dataset = Apollo3d_loader(args.data_dir, args.data_split, phase = "test")
-    # val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=cfg.batch_size, shuffle=False, num_workers=cfg.num_workers, pin_memory=True)
+    val_dataset = Apollo3d_loader(args.data_dir, args.data_split, phase = "test")
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=cfg.batch_size, shuffle=False, num_workers=cfg.num_workers, pin_memory=True)
     
     train_loader_len = len(train_loader)
-    # val_loader_len = len(val_loader)
+    val_loader_len = len(val_loader)
 
     print("===> batches in train loader", train_loader_len)
     # print("===> batches in val loader", val_loader_len)
@@ -358,7 +358,7 @@ if __name__ == "__main__":
             w_clustering_Loss = 0.3
             w_classification_Loss = 0.7
 
-            overall_loss = w_clustering_Loss * loss1 + w_classification_Loss * loss2
+            overall_loss = cfg.w_clustering_Loss * loss1 + cfg.w_classification_Loss * loss2
 
             overall_loss.backward()
             optimizer2.step()
@@ -383,19 +383,62 @@ if __name__ == "__main__":
             
             #eval loop
             if should_run_valid:
-                """
-                val loop with the loader and make the model checkpoint
-                
-                """
-                    model2d.eval()
-                    model3d.eval()
-                    print(">>>>>>>Validating<<<<<<<<")
 
-                    val_loss = 0.0
-                    val_batch_loss = 0.0
+                model2d.eval()
+                model3d.eval()
+                print(">>>>>>>Validating<<<<<<<<")
 
-                    with torch.no_grad():
-                        for val_itr, val_data in enumerate(val)
+                val_loss = 0.0
+                val_batch_loss = 0.0
+
+                with torch.no_grad():
+                    for val_itr, val_data in enumerate(val_loader):
+                        val_batch = {}
+                        val_batch.update({"input_image":data[0].to(device),
+                                    "aug_mat":data[1].to(device).float(),
+                                    "gt_height":data[2].to(device),
+                                    "gt_pitch":data[3].to(device),
+                                    "gt_lane_points":data[4],
+                                    "gt_rho":data[5].to(device),
+                                    "gt_phi":data[6].to(device).float(),
+                                    "gt_cls_score":data[7].to(device),
+                                    "gt_lane_cls":data[8].to(device),
+                                    "gt_delta_z":data[9].to(device)})
+
+                        #update projection
+                        model3d.update_projection(cfg, val_batch["gt_height"], val_batch["gt_pitch"])
+                        
+                        val_o = model2d(batch["input_image"])
+                        val_o = val_o.softmax(dim=1)
+                        val_o = val_o/torch.max(torch.max(val_o, dim=2, keepdim=True)[0], dim=3, keepdim=True)[0] 
+                        # print("shape of o before max", o.shape)
+                        val_o = val_o[:,1:,:,:]
+
+                        val_out1 = model3d(val_o)
+
+                        val_out_pathway1 = val_out1["embed_out"]
+                        val_out_pathway2 = val_out1["bev_out"]
+
+                        val_rho_pred = val_out_pathway2[:,0,...]
+                        val_delta_z_pred = val_out_pathway2[:,1,...]
+                        val_cls_score_pred = val_out_pathway2[:,2,...]
+                        val_phi_pred = val_out_pathway2[:,3:,...]
+                    
+                        val_loss1 = discriminative_loss(val_out1["embed_out"], val_batch["gt_lane_cls"],cfg)
+                        val_loss2 = classification_regression_loss(L1loss, BCEloss, CEloss, val_rho_pred, val_batch["gt_rho"], val_delta_z_pred, val_batch["gt_delta_z"], val_cls_score_pred, val_batch["gt_cls_score"], val_phi_pred, val_batch["gt_phi"])
+                    
+                        val_overall_loss = cfg.w_clustering_Loss * val_loss1 + cfg.w_classification_Loss * val_loss2
+                        
+                        val_batch_loss = val_overall_loss.detach().cpu() / cfg.batch_size
+                        val_loss += val_batch_loss
+                    
+                        if (val_itr +1) % 1 == 0:
+                            val_running_loss = val_loss.item() / (val_itr + 1)
+                            print(f"Validation: {val_itr+1} steps of ~{val_loader_len}.  Validation Running Loss {val_running_loss:.4f}")
+
+                    val_avg_loss = val_loss / (val_itr +1)
+                    print(f"Validation Loss: {val_avg_loss}")
+
                 
 
             # if should_run_vis:
