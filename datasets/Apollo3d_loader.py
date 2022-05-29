@@ -52,7 +52,7 @@ class CalculateDistanceAngleOffests(object):
 
         self.y_samples = np.linspace(self.min_y, self.max_y, num=100, endpoint=False)
 
-    def draw_bevlanes(self, gt_lanes, img, gt_cam_height, gt_cam_pitch, color_list):
+    def draw_bevlanes(self, gt_lanes, img, gt_cam_height, gt_cam_pitch, color_list, vis = False):
         
         P_g2im = projection_g2im(gt_cam_pitch, gt_cam_height, self.K)
         # P_gt = P_g2im
@@ -72,7 +72,7 @@ class CalculateDistanceAngleOffests(object):
         cnt_gt = len(gt_lanes)
         gt_visibility_mat = np.zeros((cnt_gt, 100))
                 
-        # resample gt at y_samples
+        # resample gt and pred at y_samples
         for i in range(cnt_gt):
             min_y = np.min(np.array(gt_lanes[i])[:, 1])
             max_y = np.max(np.array(gt_lanes[i])[:, 1])
@@ -86,7 +86,11 @@ class CalculateDistanceAngleOffests(object):
 
         flag = False     
         dummy_image = im_ipm.copy()
-        dummy_image[:,:,:] = 0
+        
+        if vis == False:
+            dummy_image[:,:,:] = 0
+        else: 
+            dummy_image = dummy_image #basically I want to represent bev lines on the image
 
         delta_z_dict = {}
         for i in range(cnt_gt):
@@ -105,10 +109,24 @@ class CalculateDistanceAngleOffests(object):
                 x_ipm_values = x_values
                 y_ipm_values = self.y_samples
 
+            #for vis on IPM image
             x_ipm_values, y_ipm_values = homographic_transformation(self.H_g2ipm, x_ipm_values[:100], y_ipm_values)
-
             x_ipm_values = x_ipm_values.astype(np.int)
             y_ipm_values = y_ipm_values.astype(np.int)
+
+            #for vis on original image
+            x_2d, y_2d = projective_transformation(P_gt, x_values[:100], self.y_samples, z_values[:100])
+            x_2d = x_2d.astype(np.int)
+            y_2d = y_2d.astype(np.int)
+            
+            #draw on 2d image
+            for k in range(1, x_2d.shape[0]):
+                # only draw the visible portion
+                if gt_visibility_mat[i, k - 1] and gt_visibility_mat[i, k]:
+                    #check if the point is in the image
+                    if 0 <= x_2d[k] <= img.shape[1] and 0<= y_2d[k] <= img.shape[0] and  0 <= x_2d[k-1] <= img.shape[1] and 0 <= y_2d[k-1] <= img.shape[0]:
+                        img = cv2.line(img, (x_2d[k - 1], y_2d[k - 1]), (x_2d[k], y_2d[k]), [255,0,0], 3)
+
             # draw on ipm
             for k in range(1, x_ipm_values.shape[0]):
                 # only draw the visible portion
@@ -119,7 +137,12 @@ class CalculateDistanceAngleOffests(object):
                     dummy_image = cv2.line(dummy_image, (x_ipm_values[k - 1], y_ipm_values[k - 1]),
                                         (x_ipm_values[k], y_ipm_values[k]), (color_list[i][0],0,0), 1)
 
-        return dummy_image, delta_z_dict
+            ##TODO: draw in 3d
+
+        if vis == False:
+            return dummy_image, delta_z_dict
+        else:    
+            return dummy_image, img  #---> (lines on IPM image, lines on original image)
 
 #TODO: Rho values are all negative for some reason verify it is correct
 def generategt_pertile(gt_lanes, img , gt_cam_height, gt_cam_pitch, cfg):
@@ -178,8 +201,8 @@ def generategt_pertile(gt_lanes, img , gt_cam_height, gt_cam_pitch, cfg):
             # cv2.imwrite(f"/home/gautam/Thesis/E2E_3DLane_AuxNet/datasets/test/img{r}_{c}.png",bev_projected_lanes[r:r+32, c:c+32])
             
             #TODO: replace 32 by tile_size
-            check_line_chords = np.argwhere(bev_projected_lanes[r:r+32, c:c+32] >0) ## denotes a patch of size 32x32
-            tile_img = bev_projected_lanes[r:r+32, c:c+32]
+            check_line_chords = np.argwhere(bev_projected_lanes[r:r+tile_size, c:c+tile_size] >0) ## denotes a patch of size 32x32
+            tile_img = bev_projected_lanes[r:r+tile_size, c:c+tile_size]
             
             dz = []
             if r == 0 and c == 0:
@@ -287,6 +310,8 @@ class Apollo3d_loader(Dataset):
         if not os.path.exists(img_path):
             raise FileNotFoundError('cannot find file: {}'.format(img_path))
         
+        batch.update({"img_full_path": img_path})
+
         img = cv2.imread(img_path)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         
@@ -295,7 +320,7 @@ class Apollo3d_loader(Dataset):
         #resize
         img = cv2.resize(img, (self.cfg.resize_h, self.cfg.resize_w), interpolation=cv2.INTER_AREA)
 
-        if self.cfg.augmentation:
+        if self.phase == "train": #training only
             img, aug_mat = data_aug_rotate(img)
             batch.update({"aug_mat": torch.from_numpy(aug_mat)})
 
@@ -318,6 +343,7 @@ class Apollo3d_loader(Dataset):
         batch.update({'gt_delta_z':torch.from_numpy(gt_delta_z)})
         
         #convert the image to tensor
+        ##TODO: check the effect on accuracy BGR2RGB
         img = transforms.ToTensor()(img)
         img = img.float()
         img = transforms.Normalize(mean= self.cfg.img_mean, std=self.cfg.img_std)(img)
@@ -356,16 +382,18 @@ def collate_fn(batch):
 
     gt_delta_z_data = [item['gt_delta_z'] for item in batch]
     gt_delta_z_data = torch.stack(gt_delta_z_data, dim = 0)
+    
+    gt_image_full_path =[item["img_full_path"] for item in batch]
 
     if 'aug_mat' in batch[0]:
         aug_mat_data = [item['aug_mat'] for item in batch]
         aug_mat_data = torch.stack(aug_mat_data, dim = 0)
 
-        return [img_data, aug_mat_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data]
+        return [img_data, aug_mat_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data, gt_image_full_path]
                     # 0      1                2                   3                    4                    5                 6                 7                 8          9
     else: #no augmentation
-        return [img_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data]
-
+        return [img_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data, gt_image_full_path]
+                    #0      1                           2                   3                    4                    5                 6                 7                 8          9    
 if __name__ == "__main__":
 
     #unit test for the data loader
@@ -396,6 +424,8 @@ if __name__ == "__main__":
         # print("Checking the values of delta_z",data[9])
         # print("phi_ij",data[6][:,:,3,0])
         # print(data[2][0])
-        print(data[1])
-        print(data[1].shape)
-        print(data[1].dtype)
+        # print(data[1])
+        # print(data[1].shape)
+        # print(data[1].dtype)
+        print(data[10])
+        break

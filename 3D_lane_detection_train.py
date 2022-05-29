@@ -76,7 +76,7 @@ def classification_regression_loss(L1loss, BCEloss, CEloss, rho_pred, rho_gt, de
                     Overall_loss = Overall_loss + Overall_loss_ij 
 
     #         #TODO: Verify if I need to divid this loss for one batch by grid_w * grid_h
-    #         Overall_loss = Overall_loss/ (rho_pred.shape[1]* rho_pred.shape[2])
+            # Overall_loss = Overall_loss/ (rho_pred.shape[1]* rho_pred.shape[2])
         Average_OverallLoss = Overall_loss / batch_size
         
         return Average_OverallLoss
@@ -159,11 +159,11 @@ def discriminative_loss(embedding, delta_c_gt, cfg, device = None):
             #divide by 2 to compensate the double loss calculation
             push_loss = push_loss + torch.sum(F.relu(-dist + cfg.delta_push)**2) / (num_lanes * (num_lanes-1)) / 2
     
-    pull_loss= pull_loss / cfg.batch_size
+    pull_loss = pull_loss / cfg.batch_size
     push_loss = push_loss / cfg.batch_size
 
-    loss_embedding = pull_loss + push_loss
-    return loss_embedding
+    loss_embedding = pull_loss + push_loss 
+    return loss_embedding # batch loss
 
 
 if __name__ == "__main__":
@@ -222,15 +222,15 @@ if __name__ == "__main__":
     train_dataset = Apollo3d_loader(data_root, data_split, cfg = cfg, phase = "train")
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.num_workers, collate_fn = collate_fn, pin_memory=True)
 
-    # # TODO: split the test set into val and test set after the training is verified.
-    val_dataset = Apollo3d_loader(args.data_dir, args.data_split, phase = "test")
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=cfg.batch_size, shuffle=False, num_workers=cfg.num_workers, pin_memory=True)
+    # # # TODO: split the test set into val and test set after the training is verified.
+    val_dataset = Apollo3d_loader(data_root, data_split, cfg = cfg, phase = "test")
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.num_workers, collate_fn = collate_fn, pin_memory=True)
     
     train_loader_len = len(train_loader)
     val_loader_len = len(val_loader)
 
     print("===> batches in train loader", train_loader_len)
-    # print("===> batches in val loader", val_loader_len)
+    print("===> batches in val loader", val_loader_len)
     
     #load model and weights
     if args.e2e == True: #TODO: make a single forward function for the combined model
@@ -325,7 +325,6 @@ if __name__ == "__main__":
             update augmented matrix
             optimzer.zero_grad() condition with e2e and simple  
             """
-            print(batch["gt_height"].dtype)
             #TODO: add the condition for camera fix
             #update projection
             model3d.update_projection(cfg, batch["gt_height"], batch["gt_pitch"])
@@ -354,12 +353,14 @@ if __name__ == "__main__":
         
             loss1 = discriminative_loss(out1["embed_out"], batch["gt_lane_cls"],cfg)
             loss2 = classification_regression_loss(L1loss, BCEloss, CEloss, rho_pred, batch["gt_rho"], delta_z_pred, batch["gt_delta_z"], cls_score_pred, batch["gt_cls_score"], phi_pred, batch["gt_phi"])
-        
+            
+            print("==>discriminative loss::", loss1.item())
+            print("==>classification loss::", loss2.item())
             w_clustering_Loss = 0.3
             w_classification_Loss = 0.7
 
             overall_loss = cfg.w_clustering_Loss * loss1 + cfg.w_classification_Loss * loss2
-
+            print("==>overall loss::", overall_loss.item())
             overall_loss.backward()
             optimizer2.step()
 
@@ -395,15 +396,14 @@ if __name__ == "__main__":
                     for val_itr, val_data in enumerate(val_loader):
                         val_batch = {}
                         val_batch.update({"input_image":data[0].to(device),
-                                    "aug_mat":data[1].to(device).float(),
-                                    "gt_height":data[2].to(device),
-                                    "gt_pitch":data[3].to(device),
-                                    "gt_lane_points":data[4],
-                                    "gt_rho":data[5].to(device),
-                                    "gt_phi":data[6].to(device).float(),
-                                    "gt_cls_score":data[7].to(device),
-                                    "gt_lane_cls":data[8].to(device),
-                                    "gt_delta_z":data[9].to(device)})
+                                    "gt_height":data[1].to(device),
+                                    "gt_pitch":data[2].to(device),
+                                    "gt_lane_points":data[3],
+                                    "gt_rho":data[4].to(device),
+                                    "gt_phi":data[5].to(device).float(),
+                                    "gt_cls_score":data[6].to(device),
+                                    "gt_lane_cls":data[7].to(device),
+                                    "gt_delta_z":data[8].to(device)})
 
                         #update projection
                         model3d.update_projection(cfg, val_batch["gt_height"], val_batch["gt_pitch"])
@@ -436,16 +436,42 @@ if __name__ == "__main__":
                             val_running_loss = val_loss.item() / (val_itr + 1)
                             print(f"Validation: {val_itr+1} steps of ~{val_loader_len}.  Validation Running Loss {val_running_loss:.4f}")
 
+                        """
+                        TODO: Calacualate metric here and return the metric value and create a model checkpoint here as per the metric value
+                        """
+
                     val_avg_loss = val_loss / (val_itr +1)
                     print(f"Validation Loss: {val_avg_loss}")
 
-                
+            if should_run_vis:
+                """
+                vis loop with the loader with 2d, BEV visualisation and 3d visualisation for gt and predictions
+                """
 
-            # if should_run_vis:
-            #     """
-            #     vis loop with the loader with 2d, BEV visualisation and 3d visualisation for gt and predictions
-            #     """
-        
+                with torch.no_grad():
+                    for vis_itr, vis_data in enumerate(val_loader):
+                        vis_batch = {}
+                        vis_batch.update({"gt_height":data[1].to(device),
+                                        "gt_pitch":data[2].to(device),
+                                        "gt_lane_points":data[3], 
+                                        "image_full_path":data[9]})
+                        gt_vis_ipm_images= [] 
+                        pred_vis_ipm_images = []
+
+                        gt_vis_2d_images = []
+                        pred_vis_2d_images = []
+
+                        for b in range(cfg.batch_size):
+                            vis_img_path = vis_batch["image_full_path"][b]
+                            vis_img = cv2.imread(vis_img_path)
+
+
+
+
+
+
+
+
 
 
 

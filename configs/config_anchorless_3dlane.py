@@ -101,8 +101,8 @@ n_bins = 10
 # Discriminative Loss 
 
 #TODO: Change the values as per the Gen_net paper
-delta_pull = 0.5 ## delta_v 
-delta_push = 3.0 ## delta_d 
+delta_pull = 0.05 ## delta_v 
+delta_push = 1.5 ## delta_d 
 tile_size = 32
 
 """""

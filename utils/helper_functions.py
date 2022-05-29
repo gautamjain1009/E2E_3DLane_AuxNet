@@ -108,6 +108,28 @@ def polar_to_catesian(pred_phi, cam_pitch, cam_height, delta_z_pred, rho_pred):
 
     return cartesian_points
 
+def polar_to_cartesian_sample():
+
+    pass  
+
+def projective_transformation(Matrix, x, y, z):
+    """
+    Helper function to transform coordinates defined by transformation matrixtransform_lane_g2gflat
+
+    Args:
+            Matrix (multi dim - array): 3x4 projection matrix
+            x (array): original x coordinates
+            y (array): original y coordinates
+            z (array): original z coordinates
+    """
+    ones = np.ones((1, len(z)))
+    coordinates = np.vstack((x, y, z, ones))
+    trans = np.matmul(Matrix, coordinates)
+
+    x_vals = trans[0, :]/trans[2, :]
+    y_vals = trans[1, :]/trans[2, :]
+    return x_vals, y_vals
+
 def resample_laneline_in_y(input_lane, y_steps, out_vis=False):
     """
         Interpolate x, z values at each anchor grid, including those beyond the range of input lnae y range
