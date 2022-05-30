@@ -1,3 +1,5 @@
+from multiprocessing import dummy
+from operator import gt
 import sys
 sys.path.append("../")
 import torch 
@@ -16,6 +18,127 @@ Import just for unit test
 """
 from utils.config import Config
 
+#TODO: move this class to utils during code cleanup later
+class Visualization(object):
+    def __init__(self, org_h, org_w, resize_h, resize_w, K, ipm_w, ipm_h, crop_y, top_view_region):
+        
+        self.min_y = 0
+        self.max_y = 80
+        
+        self.K = K
+        
+        self.crop_y = crop_y
+        self.top_view_region = top_view_region
+
+        """
+            TODO: change the org_h and org_w according to feature map size in the network may be top view region too
+        """
+        self.org_h = org_h
+        self.org_w = org_w
+        self.resize_h = resize_h
+        self.resize_w = resize_w
+        
+        self.ipm_w = ipm_w
+        self.ipm_h = ipm_h
+
+        self.H_crop = homography_crop_resize([self.org_h, self.org_w], self.crop_y, [self.resize_h, self.resize_w])
+        # transformation from ipm to ground region
+        self.H_ipm2g = cv2.getPerspectiveTransform(np.float32([[0, 0],
+                                                              [self.ipm_w-1, 0],
+                                                              [0, self.ipm_h-1],
+                                                              [self.ipm_w-1, self.ipm_h-1]]),
+                                                   np.float32(self.top_view_region))
+        self.H_g2ipm = np.linalg.inv(self.H_ipm2g)
+
+        self.x_min = top_view_region[0, 0]
+        self.x_max = top_view_region[1, 0]
+
+        self.y_samples = np.linspace(self.min_y, self.max_y, num=100, endpoint=False)
+
+    def draw_lanes(self, gt_lanes, img, gt_cam_height, gt_cam_pitch):
+        
+        P_g2im = projection_g2im(gt_cam_pitch, gt_cam_height, self.K)
+        # P_gt = P_g2im
+        P_gt = np.matmul(self.H_crop, P_g2im)
+
+        H_g2im = homography_g2im(gt_cam_pitch, gt_cam_height, self.K)
+        H_im2ipm = np.linalg.inv(np.matmul(self.H_crop, np.matmul(H_g2im, self.H_ipm2g)))
+
+        # print("Checking the shape of original image: ", img.shape)
+
+        img = cv2.warpPerspective(img, self.H_crop, (self.resize_w, self.resize_h))
+        # print("Checking the shape of cropped image: ", img.shape)     
+
+        # img = img.astype(np.float) / 255
+        im_ipm = cv2.warpPerspective(img, H_im2ipm, (self.ipm_w, self.ipm_h))
+        # im_ipm = np.clip(im_ipm, 0, 1)
+        cnt_gt = len(gt_lanes)
+        gt_visibility_mat = np.zeros((cnt_gt, 100))
+                
+        # resample gt and pred at y_samples
+        for i in range(cnt_gt):
+            min_y = np.min(np.array(gt_lanes[i])[:, 1])
+            max_y = np.max(np.array(gt_lanes[i])[:, 1])
+            x_values, z_values, visibility_vec = resample_laneline_in_y(np.array(gt_lanes[i]), self.y_samples, out_vis=True)
+            
+            gt_lanes[i] = np.vstack([x_values, z_values]).T
+            gt_visibility_mat[i, :] = np.logical_and(x_values >= self.x_min,
+                                                       np.logical_and(x_values <= self.x_max,
+                                                                      np.logical_and(self.y_samples >= min_y,
+                                                                                     self.y_samples <= max_y)))
+            gt_visibility_mat[i, :] = np.logical_and(gt_visibility_mat[i, :], visibility_vec)
+
+        flag = False     
+        dummy_image = im_ipm.copy()
+        
+        delta_z_dict = {}
+        for i in range(cnt_gt):
+            x_values = np.array(gt_lanes[i])[:, 0]
+            z_values = np.array(gt_lanes[i])[:, 1]
+            
+            # TODO: remove this condition later
+            if flag == True:
+                x_ipm_values, y_ipm_values = transform_lane_g2gflat(gt_cam_height, x_values[:100], self.y_samples, z_values[:100])
+                # remove those points with z_values > gt_cam_height, this is only for visualization on top-view
+                x_ipm_values = x_ipm_values[np.where(z_values[:100] < gt_cam_height)]
+                y_ipm_values = y_ipm_values[np.where(z_values[:100] < gt_cam_height)]
+
+            else:
+                x_ipm_values = x_values
+                y_ipm_values = self.y_samples
+
+            #for vis on IPM image
+            x_ipm_values, y_ipm_values = homographic_transformation(self.H_g2ipm, x_ipm_values[:100], y_ipm_values)
+            x_ipm_values = x_ipm_values.astype(np.int)
+            y_ipm_values = y_ipm_values.astype(np.int)
+
+            #for vis on original image
+            x_2d, y_2d = projective_transformation(P_gt, x_values[:100], self.y_samples, z_values[:100])
+            x_2d = x_2d.astype(np.int)
+            y_2d = y_2d.astype(np.int)
+
+            #draw on 2d image
+            for k in range(1, x_2d.shape[0]):
+                # only draw the visible portion
+                if gt_visibility_mat[i, k - 1] and gt_visibility_mat[i, k]:
+                    #check if the point is in the image
+                    if 0 <= x_2d[k] <= img.shape[1] and 0<= y_2d[k] <= img.shape[0] and  0 <= x_2d[k-1] <= img.shape[1] and 0 <= y_2d[k-1] <= img.shape[0]:
+                        img = cv2.line(img, (x_2d[k - 1], y_2d[k - 1]), (x_2d[k], y_2d[k]), [255,0,0], 3)
+
+            # draw on ipm
+            for k in range(1, x_ipm_values.shape[0]):
+                # print("first loop", vis)
+                # only draw the visible portion
+                if gt_visibility_mat[i, k - 1] and gt_visibility_mat[i, k] and z_values[k] < gt_cam_height:
+                    # print("print here", vis)
+                    #TODO: Verify - or + for the value for delta_z
+                    delta_z_dict.update({(x_ipm_values[k], y_ipm_values[k]): gt_cam_height + z_values[k]})
+                    dummy_image = cv2.line(dummy_image, (x_ipm_values[k - 1], y_ipm_values[k - 1]),
+                                    (x_ipm_values[k], y_ipm_values[k]), (255,0,0), 1)
+
+            ##TODO: draw in 3d
+
+        return dummy_image, img
 class CalculateDistanceAngleOffests(object):
     def __init__(self, org_h, org_w, resize_h, resize_w, K, ipm_w, ipm_h, crop_y, top_view_region):
         
@@ -77,6 +200,7 @@ class CalculateDistanceAngleOffests(object):
             min_y = np.min(np.array(gt_lanes[i])[:, 1])
             max_y = np.max(np.array(gt_lanes[i])[:, 1])
             x_values, z_values, visibility_vec = resample_laneline_in_y(np.array(gt_lanes[i]), self.y_samples, out_vis=True)
+            
             gt_lanes[i] = np.vstack([x_values, z_values]).T
             gt_visibility_mat[i, :] = np.logical_and(x_values >= self.x_min,
                                                        np.logical_and(x_values <= self.x_max,
@@ -87,14 +211,10 @@ class CalculateDistanceAngleOffests(object):
         flag = False     
         dummy_image = im_ipm.copy()
         
-        if vis == False:
-            dummy_image[:,:,:] = 0
-        else: 
-            dummy_image = dummy_image #basically I want to represent bev lines on the image
+        dummy_image[:,:,:] = 0
 
         delta_z_dict = {}
         for i in range(cnt_gt):
-    
             x_values = np.array(gt_lanes[i])[:, 0]
             z_values = np.array(gt_lanes[i])[:, 1]
             
@@ -114,36 +234,18 @@ class CalculateDistanceAngleOffests(object):
             x_ipm_values = x_ipm_values.astype(np.int)
             y_ipm_values = y_ipm_values.astype(np.int)
 
-            #for vis on original image
-            x_2d, y_2d = projective_transformation(P_gt, x_values[:100], self.y_samples, z_values[:100])
-            x_2d = x_2d.astype(np.int)
-            y_2d = y_2d.astype(np.int)
-            
-            #draw on 2d image
-            for k in range(1, x_2d.shape[0]):
-                # only draw the visible portion
-                if gt_visibility_mat[i, k - 1] and gt_visibility_mat[i, k]:
-                    #check if the point is in the image
-                    if 0 <= x_2d[k] <= img.shape[1] and 0<= y_2d[k] <= img.shape[0] and  0 <= x_2d[k-1] <= img.shape[1] and 0 <= y_2d[k-1] <= img.shape[0]:
-                        img = cv2.line(img, (x_2d[k - 1], y_2d[k - 1]), (x_2d[k], y_2d[k]), [255,0,0], 3)
-
             # draw on ipm
             for k in range(1, x_ipm_values.shape[0]):
                 # only draw the visible portion
                 if gt_visibility_mat[i, k - 1] and gt_visibility_mat[i, k] and z_values[k] < gt_cam_height:
-                    
+
                     #TODO: Verify - or + for the value for delta_z
                     delta_z_dict.update({(x_ipm_values[k], y_ipm_values[k]): gt_cam_height + z_values[k]})
                     dummy_image = cv2.line(dummy_image, (x_ipm_values[k - 1], y_ipm_values[k - 1]),
-                                        (x_ipm_values[k], y_ipm_values[k]), (color_list[i][0],0,0), 1)
+                                    (x_ipm_values[k], y_ipm_values[k]), (color_list[i][0],0,0), 1)
 
-            ##TODO: draw in 3d
-
-        if vis == False:
-            return dummy_image, delta_z_dict
-        else:    
-            return dummy_image, img  #---> (lines on IPM image, lines on original image)
-
+        return dummy_image, delta_z_dict
+        
 #TODO: Rho values are all negative for some reason verify it is correct
 def generategt_pertile(gt_lanes, img , gt_cam_height, gt_cam_pitch, cfg):
     
@@ -186,7 +288,7 @@ def generategt_pertile(gt_lanes, img , gt_cam_height, gt_cam_pitch, cfg):
     
     bev_projected_lanes, dz_dict = calculate_bev_projection.draw_bevlanes(gt_lanes, img,  gt_cam_height, gt_cam_pitch, color_list) ## returns an image array of gt lanes projected on BEV
 
-    # cv2.imwrite("/home/gautam/Thesis/E2E_3DLane_AuxNet/datasets/complete_lines_test.jpg" , bev_projected_lanes)
+    cv2.imwrite("/home/gautam/Thesis/E2E_3DLane_AuxNet/datasets/complete_lines_test1001.jpg" , bev_projected_lanes)
 
     ##init gt arrays for rho, phi and classification score and delta_z
     gt_rho = np.zeros((int(bev_projected_lanes.shape[0]/tile_size), int(bev_projected_lanes.shape[1]/tile_size)))
@@ -332,9 +434,9 @@ class Apollo3d_loader(Dataset):
         
         #TODO: correct the data representation of lane points while in the need of visulization
         gt_lanelines = gtdata['laneLines']
-        batch.update({'gt_lanelines':gt_lanelines})
+        batch.update({'gt_lanelines':gt_lanelines.copy()})
 
-        gt_lateral_offset, gt_lateral_angleoffset, gt_cls_score, gt_lane_class, gt_delta_z = generategt_pertile(gt_lanelines, img, gt_camera_height, gt_camera_pitch, self.cfg)
+        gt_lateral_offset, gt_lateral_angleoffset, gt_cls_score, gt_lane_class, gt_delta_z = generategt_pertile(gt_lanelines, img.copy(), gt_camera_height, gt_camera_pitch, self.cfg)
 
         batch.update({'gt_rho':torch.from_numpy(gt_lateral_offset)})
         batch.update({'gt_phi':torch.from_numpy(gt_lateral_angleoffset)})
@@ -366,8 +468,8 @@ def collate_fn(batch):
     gt_camera_pitch_data = [item['gt_pitch'] for item in batch]
     gt_camera_pitch_data = torch.stack(gt_camera_pitch_data, dim = 0)
 
-    gt_lanelines_data = [item['gt_lanelines'] for item in batch] #need to check the data representation of lanelines (vis)
-    
+    gt_lanelines_data = [item['gt_lanelines'] for item in batch]
+
     gt_rho_data = [item['gt_rho'] for item in batch]
     gt_rho_data = torch.stack(gt_rho_data, dim = 0)
     
@@ -393,7 +495,7 @@ def collate_fn(batch):
                     # 0      1                2                   3                    4                    5                 6                 7                 8          9
     else: #no augmentation
         return [img_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data, gt_image_full_path]
-                    #0      1                           2                   3                    4                    5                 6                 7                 8          9    
+                    #0      1                           2                   3                    4             5                 6                 7                 8          9    
 if __name__ == "__main__":
 
     #unit test for the data loader
@@ -402,30 +504,13 @@ if __name__ == "__main__":
     data_splits = '/home/gautam/e2e/lane_detection/3d_approaches/3d_dataset/3D_Lane_Synthetic_Dataset/old_data_splits/standard'
     config_path = '/home/gautam/Thesis/E2E_3DLane_AuxNet/configs/config_anchorless_3dlane.py'
     
-    # top_view_region = np.array([[-10, 103], [10, 103], [-10, 3], [10, 3]])
-    # org_h = 1080
-    # org_w = 1920
-    # crop_y = 0
-
     cfgs = Config.fromfile(config_path)
 
-    dataset = Apollo3d_loader(data_root, data_splits, cfg = cfgs)
+    dataset = Apollo3d_loader(data_root, data_splits, cfg = cfgs, phase = 'test')
     loader = DataLoader(dataset, batch_size=cfgs.batch_size, shuffle=True, num_workers=cfgs.num_workers, collate_fn=collate_fn)
-    
-    # loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=4)
+
     
     for i, data in enumerate(loader):
-        # print("Checking the shape of the image",data[0].shape)
-        # print("Checking the shape of the aug_mat",data[1].shape)
-        # print("Checking the values of RHO",data[5])
-        # print("Checking the values of Phi vector",data[6])
-        # print("Checking teh values of cls_score",data[7])
-        # print("Checking the values of lane class",data[8])
-        # print("Checking the values of delta_z",data[9])
-        # print("phi_ij",data[6][:,:,3,0])
-        # print(data[2][0])
-        # print(data[1])
-        # print(data[1].shape)
-        # print(data[1].dtype)
-        print(data[10])
-        break
+        print("===",len(data[3]))
+        print("lalantap", data[3])
+        

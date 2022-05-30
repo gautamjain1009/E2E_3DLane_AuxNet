@@ -108,9 +108,9 @@ def polar_to_catesian(pred_phi, cam_pitch, cam_height, delta_z_pred, rho_pred):
 
     return cartesian_points
 
-def polar_to_cartesian_sample():
+# def polar_to_cartesian_sample():
 
-    pass  
+#     pass  
 
 def projective_transformation(Matrix, x, y, z):
     """

@@ -20,7 +20,7 @@ import logging
 logging.basicConfig(level = logging.DEBUG)
 
 #build import for different moduless
-from datasets.Apollo3d_loader import Apollo3d_loader, collate_fn
+from datasets.Apollo3d_loader import Apollo3d_loader, collate_fn, Visualization
 from models.build_model import load_model
 from utils.helper_functions import *
 from anchorless_detector import load_3d_model
@@ -379,10 +379,9 @@ if __name__ == "__main__":
 
                 #TODO: log results on wandb
 
-
                 tr_loss  = 0.0
             
-            #eval loop
+            # eval loop
             if should_run_valid:
 
                 model2d.eval()
@@ -423,6 +422,11 @@ if __name__ == "__main__":
                         val_delta_z_pred = val_out_pathway2[:,1,...]
                         val_cls_score_pred = val_out_pathway2[:,2,...]
                         val_phi_pred = val_out_pathway2[:,3:,...]
+
+
+                        """
+                        #TODO: Generate the 3d lane points here and store them in a json file
+                        """
                     
                         val_loss1 = discriminative_loss(val_out1["embed_out"], val_batch["gt_lane_cls"],cfg)
                         val_loss2 = classification_regression_loss(L1loss, BCEloss, CEloss, val_rho_pred, val_batch["gt_rho"], val_delta_z_pred, val_batch["gt_delta_z"], val_cls_score_pred, val_batch["gt_cls_score"], val_phi_pred, val_batch["gt_phi"])
@@ -437,33 +441,78 @@ if __name__ == "__main__":
                             print(f"Validation: {val_itr+1} steps of ~{val_loader_len}.  Validation Running Loss {val_running_loss:.4f}")
 
                         """
-                        TODO: Calacualate metric here and return the metric value and create a model checkpoint here as per the metric value
+                        TODO: 
+                        1. Open the whole pred json file or an array where the points are stored
+                        2. Calacualate metric here and return the metric value and create a model checkpoint here as per the metric value
                         """
 
                     val_avg_loss = val_loss / (val_itr +1)
                     print(f"Validation Loss: {val_avg_loss}")
 
             if should_run_vis:
-                """
-                vis loop with the loader with 2d, BEV visualisation and 3d visualisation for gt and predictions
-                """
-
+                
+                print(">>>>>>>Visualizing<<<<<<<<")
+                vis = Visualization(cfg.org_h, cfg.org_w, cfg.resize_h, cfg.resize_w, cfg.K, cfg.ipm_w, cfg.ipm_h, cfg.crop_y, cfg.top_view_region)
                 with torch.no_grad():
+                    
+                    model2d.eval()
+                    model3d.eval()
+
                     for vis_itr, vis_data in enumerate(val_loader):
                         vis_batch = {}
-                        vis_batch.update({"gt_height":data[1].to(device),
-                                        "gt_pitch":data[2].to(device),
-                                        "gt_lane_points":data[3], 
-                                        "image_full_path":data[9]})
+                        vis_batch.update({"vis_gt_height":vis_data[1].cpu().numpy(),
+                                        "vis_gt_pitch":vis_data[2].cpu().numpy(),
+                                        "gt_lane_points":vis_data[3],
+                                        "image_full_path":vis_data[9],
+                                        "input_image":data[0].to(device),
+                                        "gt_height":data[1].to(device),
+                                        "gt_pitch":data[2].to(device)})
+
+                        #update projection
+                        model3d.update_projection(cfg, val_batch["gt_height"], val_batch["gt_pitch"])
+                        
+                        vis_o = model2d(vis_batch["input_image"])
+                        vis_o = vis_o.softmax(dim=1)
+                        vis_o = vis_o/torch.max(torch.max(vis_o, dim=2, keepdim=True)[0], dim=3, keepdim=True)[0] 
+                        # print("shape of o before max", o.shape)
+                        vis_o = vis_o[:,1:,:,:]
+
+                        vis_out1 = model3d(val_o)
+
+                        vis_out_pathway2 = vis_out1["bev_out"]
+
+                        vis_rho_pred = vis_out_pathway2[:,0,...]
+                        vis_delta_z_pred = vis_out_pathway2[:,1,...]
+                        vis_cls_score_pred = vis_out_pathway2[:,2,...]
+                        vis_phi_pred = vis_out_pathway2[:,3:,...]
+                                                
+                        """
+                        HERE TODO: generate the 3D lane points from the prediction of one sample and add it to the fucking visusalisaton 
+                        """
+                        
+                        #TODO: make a separate function for this part of vis later-
                         gt_vis_ipm_images= [] 
                         pred_vis_ipm_images = []
 
                         gt_vis_2d_images = []
                         pred_vis_2d_images = []
-
+                
                         for b in range(cfg.batch_size):
                             vis_img_path = vis_batch["image_full_path"][b]
                             vis_img = cv2.imread(vis_img_path)
+                            
+                            #list containing arrays of lane points
+                            gt_ipm, gt_2d = vis.draw_lanes(vis_batch["gt_lane_points"][b], vis_img, vis_batch["vis_gt_height"][b], vis_batch["vis_gt_pitch"][b])         
+                            
+                            cv2.imwrite("ipm_test.jpg",gt_ipm)
+                            cv2.imwrite("2d_test.jpg",gt_2d)
+                            
+                            gt_vis_ipm_images.append(gt_ipm)
+                            gt_vis_2d_images.append(gt_2d)
+
+                            break #visualize only one sample for now per vis iteration
+
+
 
 
 
