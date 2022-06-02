@@ -70,10 +70,7 @@ def visualizaton(model, device, data_loader,cfg):
                 break
             
             elif cfg.train_type == "binary":
-                #TODO:
-                """
-                Loop over the batch of the pred mask and visualize it on the original image
-                """
+                
                 images = []
                 mapping = {(0, 0, 0): 0, (255, 255, 255): 1}
                 rev_mapping = {mapping[k]: k for k in mapping}
@@ -91,7 +88,6 @@ def visualizaton(model, device, data_loader,cfg):
                         
                     pred_img = cv2.resize(pred_img, (cfg.ori_img_w, cfg.ori_img_h - cfg.cut_height), interpolation=cv2.INTER_NEAREST)
                     
-                    #TODO: Add cut height param from config to be used for visualization as it is not correct right now.
                     org_image = cv2.imread(orig_image_path[i])
                     org_image = org_image[cfg.cut_height:, :, :]
 
@@ -128,7 +124,6 @@ def validate(model, device, data_loader, loss_f, cfg):
 
             else:
                 #calcualte IOU
-                
                 metric_batch = iou(torch.argmax(val_seg_out,1), val_gt_mask)
                 Iou_batch_list.append(metric_batch)
             
@@ -182,12 +177,10 @@ def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, 
         
         with Timing(timings, "inputs_to_GPU"):
             gt_mask = data['binary_mask'].to(device).long()
-            print("gt_mask",gt_mask.shape)
             input_img = data['img'].to(device)
             
         with Timing(timings,"forward_pass"):
             seg_out = model(input_img)
-            print(seg_out)
 
         with Timing(timings,"seg_loss"):
             
@@ -259,7 +252,6 @@ def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, 
                 
                 elif cfg.train_type == "binary":
                     
-                    #TODO: TO verify if IOU is calcualted correctly
                     if Iou_val > Iou:
                         Iou = Iou_val
                         print(f"Best IOU for Epoch:{epoch+1} and train itr. {itr} is: {Iou_val} ")

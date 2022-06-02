@@ -10,8 +10,8 @@ img_norm = dict(
     std=[1., 1., 1.]
 )
 
-img_height = 368
-img_width = 640
+img_height = 360
+img_width = 480
 cut_height = 160
 ori_img_h = 720
 ori_img_w = 1280

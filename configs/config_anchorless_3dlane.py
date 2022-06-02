@@ -48,9 +48,9 @@ heads = dict(type = 'PlainDecoder')
 """
 3d model params (anchorless) for Apollo SIM3D dataset
 """
-encode_mode ="overlapping"
+# encode_mode ="overlapping"
 # encode_mode = "1x1non"
-# encode_mode = "32x32non"
+encode_mode = "32x32non"
 # encode_mode = "1x1_mix_32X32"
 
 #(channles, K_size, padding, stride)
@@ -119,7 +119,7 @@ train_log_frequency = 200
 
 # #Hyperparams
 epochs = 100
-batch_size = 3
+batch_size = 1
 num_workers = 1
 l2_lambda = 1e-4
 log_frequency_steps = 200
@@ -135,3 +135,11 @@ bg_weight = 0.4 #used in the loss function to reduce the importance of one class
 #TODO: try different combination later as per the gradients and in the end try to balance them
 w_clustering_Loss = 0.3
 w_classification_Loss = 0.7
+
+
+"""
+NOTE:: NOTE:: NOTE:: NOTE::
+In the end I would say that, yes this method of mine is one camera based. Just take the example of comma and decode
+how can I make my approach work for any camera whatsoever, more over read thatn once paper which is claminig this also.
+
+"""

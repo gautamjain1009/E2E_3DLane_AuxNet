@@ -8,8 +8,12 @@ def pprint_seconds(seconds):
     minutes = (seconds % 3600) // 60
     seconds = seconds % 60
     return f"{int(hours):1d}h {int(minutes):1d}min {int(seconds):1d}s"
-    
+ 
 def HoughLine(image):
+    
+        """
+        TODO: correct this algo + SVD
+        """
         ''' Basic Hough line transform that builds the accumulator array
         Input : image tile (gray scale image)
         Output : accumulator : the accumulator of hough space
@@ -24,37 +28,38 @@ def HoughLine(image):
         Nx = image.shape[1]
 
         #Max diatance is diagonal one 
-        Maxdist = int(np.round(np.sqrt(Nx**2 + Ny ** 2)))
+        Maxdist = int(np.round(np.sqrt(Nx**2 + Ny ** 2)/2)) #-- 23
 
         # Theta in range from -90 to 90 degrees
-        thetas = np.deg2rad(np.arange(0, 360))
+        thetas = np.deg2rad(np.arange(0, 360,1))
         
         #Range of radius
-        rs = np.linspace(-Maxdist, Maxdist, 2*Maxdist)
+        # rs = np.linspace(-Maxdist, Maxdist, 2*Maxdist )
+        rs = np.arange(-Maxdist, Maxdist + 1, 1)
 
         #Create accumulator array and initialize to zero
-        accumulator = np.zeros((2 * Maxdist, len(thetas)))
-         
-        # Loop for each edge pixel
-        for y in range(Ny):
-            for x in range(Nx):
-                # Check if it is an edge pixel
-                #  NB: y -> rows , x -> columns
-                if image[y,x] > 0:
-                    lane_exist = True
-                    #Loop for each theta
-                    # Map edge pixel to hough space
-                    for k in range(len(thetas)):
-                    #calculate ρ
-                        r = x*np.cos(thetas[k]) + y * np.sin(thetas[k])
-                    # Increment accumulator at r, theta    
-                        # Update the accumulator
-                        # N.B: r has value -max to max
-                        # map r to its idx 0 : 2*max
-                        accumulator[int(r) + Maxdist,k] += 1
-        return accumulator, thetas, rs, lane_exist
+        accumulator = np.zeros((len(rs), len(thetas)))
+        y_idxs, x_idxs = np.nonzero(image)
 
-#helper function later to add in the utils.py responsible for the projection 
+        if len(x_idxs) == 0 or len(y_idxs) == 0:
+
+            return accumulator, thetas, rs, lane_exist
+
+        else:   
+            lane_exist = True
+            for i in range(len(x_idxs)):
+                x = x_idxs[i]
+                y = y_idxs[i]
+
+                for j in range(len(thetas)):
+                    rho = int((x * np.cos(thetas[j]) + y * np.sin(thetas[j])) + Maxdist)
+                    try:
+                        accumulator[rho, j] += 1
+                    except:
+                        continue
+
+            return accumulator, thetas, rs, lane_exist
+
 def homography_crop_resize(org_img_size, crop_y, resize_img_size):
     """
         compute the homography matrix transform original image to cropped and resized image
@@ -91,9 +96,9 @@ def polar_to_catesian(pred_phi, cam_pitch, cam_height, delta_z_pred, rho_pred):
     NOTE: this function is valid only for one tile
     convert the polar coordinates to cartesian coordinates
     :param pred_phi: predicted line angle
-    :param cam_pitch: camera pitch
-    :param cam_height: camera height
-    :param delta_z_pred: predicted delta z
+    :param cam_pitch: camera pitch (radians)
+    :param cam_height: camera height (m)
+    :param delta_z_pred: predicted delta z (m)
     :param rho_pred: predicted lateral offset
     :return:
     """
@@ -102,7 +107,7 @@ def polar_to_catesian(pred_phi, cam_pitch, cam_height, delta_z_pred, rho_pred):
     rotation_matrix = np.array([[1, 0, 0],
                                 [0, np.cos(cam_pitch), np.sin(cam_pitch)],
                                 [0, -np.sin(cam_pitch), np.cos(cam_pitch)]])
-    translation_matrix = np.array([[rho_pred * np.cos(pred_phi), rho_pred * np.sin(pred_phi), delta_z_pred - cam_height]])
+    translation_matrix = np.array([[rho_pred * np.cos(pred_phi)],[rho_pred * np.sin(pred_phi)], [delta_z_pred - cam_height]])
     
     cartesian_points = np.dot(rotation_matrix, translation_matrix) # --> (3, 1)
 
@@ -257,7 +262,7 @@ def homography_crop_resize(org_img_size, crop_y, resize_img_size):
         compute the homography matrix transform original image to cropped and resized image
     :param org_img_size: [org_h, org_w]
     :param crop_y:
-    :param resize_img_size: [resize_h, resize_w]
+    :param resize_img_size: [resize_h, resize_w]0
     :return:
     """
     # transform original image region to network input region

@@ -40,7 +40,7 @@ def classification_regression_loss(L1loss, BCEloss, CEloss, rho_pred, rho_gt, de
         return:
             Angle_loss: loss for angle regression (Cross entropy loss for phi vector) + l1 loss for phi vector
             offset_loss: l1 loss for delta_z + l1 loss for rho
-            score_loss: BCE loss for cls_score regression
+            score_loss: BCEwithLogits loss for cls_score regression
 
             Overall_loss: score_loss + c_ij * Angle_loss + c_ij * offset_loss
         """
@@ -64,8 +64,8 @@ def classification_regression_loss(L1loss, BCEloss, CEloss, rho_pred, rho_gt, de
                     # --------------- Line angle loss ------------------
                     #TODO: add delta phi loss with indicator function
                     phi_gt_ij = m(phi_gt[b,:,i,j].reshape(1,10))
-                    loss_phi_ij = CEloss(phi_pred[b,:,i,j].reshape(1,10),phi_gt_ij)
-                    
+                    loss_phi_ij = CEloss(phi_pred[b,:,i,j].reshape(1,10),phi_gt_ij) (1,10) , (1,10) 
+
                     # print("loss_phi_ij", loss_phi_ij)
                     Lineangle_loss = loss_phi_ij
 
@@ -75,7 +75,7 @@ def classification_regression_loss(L1loss, BCEloss, CEloss, rho_pred, rho_gt, de
                     
                     Overall_loss = Overall_loss + Overall_loss_ij 
 
-    #         #TODO: Verify if I need to divid this loss for one batch by grid_w * grid_h
+    #         #TODO: Verify if I need to divide this loss for one batch by grid_w * grid_h
             # Overall_loss = Overall_loss/ (rho_pred.shape[1]* rho_pred.shape[2])
         Average_OverallLoss = Overall_loss / batch_size
         
@@ -240,12 +240,14 @@ if __name__ == "__main__":
     else: 
         model2d = load_model(cfg, baseline=args.baseline, pretrained = args.pretrained2d).to(device) #args.pretrained2d == TRUE
         model3d = load_3d_model(cfg, device, pretrained=args.pretrained3d).to(device)
-    
+
     #general loss functions
     L1loss= nn.L1Loss().to(device)
-    #NOTE: verify that BCEWithLogitsLoss for score as We know that when the last layer has aa citvations normal loss can be used (numerically stable rn) 
+    #NOTE: verify that BCEWithLogitsLoss for score as We know that when the last layer has acitvations normal loss can be used (numerically stable rn) 
     BCEloss = nn.BCEWithLogitsLoss().to(device)
     CEloss = nn.CrossEntropyLoss().to(device)
+    m = nn.Sigmoid()
+
     """
     Model related TODO's for End-to-End training
     #TODO: Add all the parameters to the config file
@@ -289,9 +291,8 @@ if __name__ == "__main__":
         tr_loss = 0.0 
         start_point = time.time()
 
-        # timings = dict()
-        # multitimings = MultiTiming(timings)
-
+        timings = dict()
+        multitimings = MultiTiming(timings)
 
         for itr, data in enumerate(train_loader):
             
@@ -349,168 +350,179 @@ if __name__ == "__main__":
             rho_pred = out_pathway2[:,0,...]
             delta_z_pred = out_pathway2[:,1,...]
             cls_score_pred = out_pathway2[:,2,...]
-            phi_pred = out_pathway2[:,3:,...]
-        
-            loss1 = discriminative_loss(out1["embed_out"], batch["gt_lane_cls"],cfg)
-            loss2 = classification_regression_loss(L1loss, BCEloss, CEloss, rho_pred, batch["gt_rho"], delta_z_pred, batch["gt_delta_z"], cls_score_pred, batch["gt_cls_score"], phi_pred, batch["gt_phi"])
+            phi_pred = out_pathway2[:,3:,...] 
+
+            print("checkign teh cvaluye rho",rho_pred)
             
-            print("==>discriminative loss::", loss1.item())
-            print("==>classification loss::", loss2.item())
-            w_clustering_Loss = 0.3
-            w_classification_Loss = 0.7
+            # print("vis rho_pred how it looks for me in this case",rho_pred)
+            # print("rho_gt________", batch["gt_rho"])
+            # # print("vis delta_z_pred how it looks for me in this case",delta_z_pred)
+            # print("cls_score without sigmoid", cls_score_pred)
+            # print("vis cls_score_pred how it looks for me in this case",m(cls_score_pred))
 
-            overall_loss = cfg.w_clustering_Loss * loss1 + cfg.w_classification_Loss * loss2
-            print("==>overall loss::", overall_loss.item())
-            overall_loss.backward()
-            optimizer2.step()
-
-            batch_loss = overall_loss.detach().cpu() / cfg.batch_size
-
-            #reporting model fps
-            # fps = cfg.batch_size / (time.time() - start_po
-
-            tr_loss += batch_loss
-
-            if should_log_train:
-
-                running_loss = tr_loss.item() / cfg.train_log_frequency
-                print(f"Epoch: {epoch+1}/{cfg.epochs}. Done {itr+1} steps of ~{train_loader_len}. Running Loss:{running_loss:.4f}")
-                # pprint(timings)
-
-                #TODO: log results on wandb
-
-                tr_loss  = 0.0
+            # loss1 = discriminative_loss(out1["embed_out"], batch["gt_lane_cls"],cfg)
+            # loss2 = classification_regression_loss(L1loss, BCEloss, CEloss, rho_pred, batch["gt_rho"], delta_z_pred, batch["gt_delta_z"], cls_score_pred, batch["gt_cls_score"], phi_pred, batch["gt_phi"])
             
-            # eval loop
-            if should_run_valid:
+            # print("==>discriminative loss::", loss1.item())
+            # print("==>classification loss::", loss2.item())
+            # w_clustering_Loss = 0.3
+            # w_classification_Loss = 0.7
 
-                model2d.eval()
-                model3d.eval()
-                print(">>>>>>>Validating<<<<<<<<")
+            # overall_loss = cfg.w_clustering_Loss * loss1 + cfg.w_classification_Loss * loss2
+            # print("==>overall loss::", overall_loss.item())
+            # overall_loss.backward()
+            # optimizer2.step()
 
-                val_loss = 0.0
-                val_batch_loss = 0.0
+            # batch_loss = overall_loss.detach().cpu() / cfg.batch_size
 
-                with torch.no_grad():
-                    for val_itr, val_data in enumerate(val_loader):
-                        val_batch = {}
-                        val_batch.update({"input_image":data[0].to(device),
-                                    "gt_height":data[1].to(device),
-                                    "gt_pitch":data[2].to(device),
-                                    "gt_lane_points":data[3],
-                                    "gt_rho":data[4].to(device),
-                                    "gt_phi":data[5].to(device).float(),
-                                    "gt_cls_score":data[6].to(device),
-                                    "gt_lane_cls":data[7].to(device),
-                                    "gt_delta_z":data[8].to(device)})
+            # #reporting model fps
+            # # fps = cfg.batch_size / (time.time() - start_po
 
-                        #update projection
-                        model3d.update_projection(cfg, val_batch["gt_height"], val_batch["gt_pitch"])
+            # tr_loss += batch_loss
+
+            # if should_log_train:
+
+            #     running_loss = tr_loss.item() / cfg.train_log_frequency
+            #     print(f"Epoch: {epoch+1}/{cfg.epochs}. Done {itr+1} steps of ~{train_loader_len}. Running Loss:{running_loss:.4f}")
+            #     # pprint(timings)
+
+            #     #TODO: log results on wandb
+
+            #     tr_loss  = 0.0
+            
+            # # eval loop
+            # if should_run_valid:
+
+            #     model2d.eval()
+            #     model3d.eval()
+            #     print(">>>>>>>Validating<<<<<<<<")
+
+            #     val_loss = 0.0
+            #     val_batch_loss = 0.0
+
+            #     with torch.no_grad():
+            #         for val_itr, val_data in enumerate(val_loader):
+            #             val_batch = {}
+            #             val_batch.update({"input_image":data[0].to(device),
+            #                         "gt_height":data[1].to(device),
+            #                         "gt_pitch":data[2].to(device),
+            #                         "gt_lane_points":data[3],
+            #                         "gt_rho":data[4].to(device),
+            #                         "gt_phi":data[5].to(device).float(),
+            #                         "gt_cls_score":data[6].to(device),
+            #                         "gt_lane_cls":data[7].to(device),
+            #                         "gt_delta_z":data[8].to(device)})
+
+            #             #update projection
+            #             model3d.update_projection(cfg, val_batch["gt_height"], val_batch["gt_pitch"])
                         
-                        val_o = model2d(batch["input_image"])
-                        val_o = val_o.softmax(dim=1)
-                        val_o = val_o/torch.max(torch.max(val_o, dim=2, keepdim=True)[0], dim=3, keepdim=True)[0] 
-                        # print("shape of o before max", o.shape)
-                        val_o = val_o[:,1:,:,:]
+            #             val_o = model2d(batch["input_image"])
+            #             val_o = val_o.softmax(dim=1)
+            #             val_o = val_o/torch.max(torch.max(val_o, dim=2, keepdim=True)[0], dim=3, keepdim=True)[0] 
+            #             # print("shape of o before max", o.shape)
+            #             val_o = val_o[:,1:,:,:]
 
-                        val_out1 = model3d(val_o)
+            #             val_out1 = model3d(val_o)
 
-                        val_out_pathway1 = val_out1["embed_out"]
-                        val_out_pathway2 = val_out1["bev_out"]
+            #             val_out_pathway1 = val_out1["embed_out"]
+            #             val_out_pathway2 = val_out1["bev_out"]
 
-                        val_rho_pred = val_out_pathway2[:,0,...]
-                        val_delta_z_pred = val_out_pathway2[:,1,...]
-                        val_cls_score_pred = val_out_pathway2[:,2,...]
-                        val_phi_pred = val_out_pathway2[:,3:,...]
+            #             val_rho_pred = val_out_pathway2[:,0,...]
+            #             val_delta_z_pred = val_out_pathway2[:,1,...]
+            #             val_cls_score_pred = val_out_pathway2[:,2,...]
+            #             val_phi_pred = val_out_pathway2[:,3:,...]
 
 
-                        """
-                        #TODO: Generate the 3d lane points here and store them in a json file
-                        """
+            #             """
+            #             #TODO: Generate the 3d lane points here and store them in a json file
+            #             """
                     
-                        val_loss1 = discriminative_loss(val_out1["embed_out"], val_batch["gt_lane_cls"],cfg)
-                        val_loss2 = classification_regression_loss(L1loss, BCEloss, CEloss, val_rho_pred, val_batch["gt_rho"], val_delta_z_pred, val_batch["gt_delta_z"], val_cls_score_pred, val_batch["gt_cls_score"], val_phi_pred, val_batch["gt_phi"])
+            #             val_loss1 = discriminative_loss(val_out1["embed_out"], val_batch["gt_lane_cls"],cfg)
+            #             val_loss2 = classification_regression_loss(L1loss, BCEloss, CEloss, val_rho_pred, val_batch["gt_rho"], val_delta_z_pred, val_batch["gt_delta_z"], val_cls_score_pred, val_batch["gt_cls_score"], val_phi_pred, val_batch["gt_phi"])
                     
-                        val_overall_loss = cfg.w_clustering_Loss * val_loss1 + cfg.w_classification_Loss * val_loss2
+            #             val_overall_loss = cfg.w_clustering_Loss * val_loss1 + cfg.w_classification_Loss * val_loss2
                         
-                        val_batch_loss = val_overall_loss.detach().cpu() / cfg.batch_size
-                        val_loss += val_batch_loss
+            #             val_batch_loss = val_overall_loss.detach().cpu() / cfg.batch_size
+            #             val_loss += val_batch_loss
                     
-                        if (val_itr +1) % 1 == 0:
-                            val_running_loss = val_loss.item() / (val_itr + 1)
-                            print(f"Validation: {val_itr+1} steps of ~{val_loader_len}.  Validation Running Loss {val_running_loss:.4f}")
+            #             if (val_itr +1) % 1 == 0:
+            #                 val_running_loss = val_loss.item() / (val_itr + 1)
+            #                 print(f"Validation: {val_itr+1} steps of ~{val_loader_len}.  Validation Running Loss {val_running_loss:.4f}")
 
-                        """
-                        TODO: 
-                        1. Open the whole pred json file or an array where the points are stored
-                        2. Calacualate metric here and return the metric value and create a model checkpoint here as per the metric value
-                        """
+            #             """
+            #             TODO: 
+            #             1. Open the whole pred json file or an array where the points are stored
+            #             2. Calacualate metric here and return the metric value and create a model checkpoint here as per the metric value
+            #             """
 
-                    val_avg_loss = val_loss / (val_itr +1)
-                    print(f"Validation Loss: {val_avg_loss}")
+            #         val_avg_loss = val_loss / (val_itr +1)
+            #         print(f"Validation Loss: {val_avg_loss}")
 
-            if should_run_vis:
+            # if should_run_vis:
                 
-                print(">>>>>>>Visualizing<<<<<<<<")
-                vis = Visualization(cfg.org_h, cfg.org_w, cfg.resize_h, cfg.resize_w, cfg.K, cfg.ipm_w, cfg.ipm_h, cfg.crop_y, cfg.top_view_region)
-                with torch.no_grad():
+            #     print(">>>>>>>Visualizing<<<<<<<<")
+            #     vis = Visualization(cfg.org_h, cfg.org_w, cfg.resize_h, cfg.resize_w, cfg.K, cfg.ipm_w, cfg.ipm_h, cfg.crop_y, cfg.top_view_region)
+            #     with torch.no_grad():
                     
-                    model2d.eval()
-                    model3d.eval()
+            #         model2d.eval()
+            #         model3d.eval()
 
-                    for vis_itr, vis_data in enumerate(val_loader):
-                        vis_batch = {}
-                        vis_batch.update({"vis_gt_height":vis_data[1].cpu().numpy(),
-                                        "vis_gt_pitch":vis_data[2].cpu().numpy(),
-                                        "gt_lane_points":vis_data[3],
-                                        "image_full_path":vis_data[9],
-                                        "input_image":data[0].to(device),
-                                        "gt_height":data[1].to(device),
-                                        "gt_pitch":data[2].to(device)})
+            #         for vis_itr, vis_data in enumerate(val_loader):
+            #             vis_batch = {}
+            #             vis_batch.update({"vis_gt_height":vis_data[1].cpu().numpy(),
+            #                             "vis_gt_pitch":vis_data[2].cpu().numpy(),
+            #                             "gt_lane_points":vis_data[3],
+            #                             "image_full_path":vis_data[9],
+            #                             "input_image":data[0].to(device),
+            #                             "gt_height":data[1].to(device),
+            #                             "gt_pitch":data[2].to(device)})
 
-                        #update projection
-                        model3d.update_projection(cfg, val_batch["gt_height"], val_batch["gt_pitch"])
+            #             #update projection
+            #             model3d.update_projection(cfg, val_batch["gt_height"], val_batch["gt_pitch"])
                         
-                        vis_o = model2d(vis_batch["input_image"])
-                        vis_o = vis_o.softmax(dim=1)
-                        vis_o = vis_o/torch.max(torch.max(vis_o, dim=2, keepdim=True)[0], dim=3, keepdim=True)[0] 
-                        # print("shape of o before max", o.shape)
-                        vis_o = vis_o[:,1:,:,:]
+            #             vis_o = model2d(vis_batch["input_image"])
+            #             vis_o = vis_o.softmax(dim=1)
+            #             vis_o = vis_o/torch.max(torch.max(vis_o, dim=2, keepdim=True)[0], dim=3, keepdim=True)[0] 
+            #             # print("shape of o before max", o.shape)
+            #             vis_o = vis_o[:,1:,:,:]
 
-                        vis_out1 = model3d(val_o)
+            #             vis_out1 = model3d(val_o)
 
-                        vis_out_pathway2 = vis_out1["bev_out"]
+            #             vis_out_pathway2 = vis_out1["bev_out"]
 
-                        vis_rho_pred = vis_out_pathway2[:,0,...]
-                        vis_delta_z_pred = vis_out_pathway2[:,1,...]
-                        vis_cls_score_pred = vis_out_pathway2[:,2,...]
-                        vis_phi_pred = vis_out_pathway2[:,3:,...]
-                                                
-                        """
-                        HERE TODO: generate the 3D lane points from the prediction of one sample and add it to the fucking visusalisaton 
-                        """
+            #             vis_rho_pred = vis_out_pathway2[:,0,...] #---> (b,13,8)
+            #             vis_delta_z_pred = vis_out_pathway2[:,1,...] #--> (b,13,8)
+            #             vis_cls_score_pred = vis_out_pathway2[:,2,...] # --> (b,13,8)
+            #             vis_phi_pred = vis_out_pathway2[:,3:,...] # --> (b,10,13,8) ---> (b,13,8)
                         
-                        #TODO: make a separate function for this part of vis later-
-                        gt_vis_ipm_images= [] 
-                        pred_vis_ipm_images = []
+            #             #TODO: make a separate function for this part of vis later-
+            #             gt_vis_ipm_images= [] 
+            #             pred_vis_ipm_images = []
 
-                        gt_vis_2d_images = []
-                        pred_vis_2d_images = []
+            #             gt_vis_2d_images = []
+            #             pred_vis_2d_images = []
                 
-                        for b in range(cfg.batch_size):
-                            vis_img_path = vis_batch["image_full_path"][b]
-                            vis_img = cv2.imread(vis_img_path)
+            #             for b in range(cfg.batch_size):
+            #                 vis_img_path = vis_batch["image_full_path"][b]
+            #                 vis_img = cv2.imread(vis_img_path)
                             
-                            #list containing arrays of lane points
-                            gt_ipm, gt_2d = vis.draw_lanes(vis_batch["gt_lane_points"][b], vis_img, vis_batch["vis_gt_height"][b], vis_batch["vis_gt_pitch"][b])         
-                            
-                            cv2.imwrite("ipm_test.jpg",gt_ipm)
-                            cv2.imwrite("2d_test.jpg",gt_2d)
-                            
-                            gt_vis_ipm_images.append(gt_ipm)
-                            gt_vis_2d_images.append(gt_2d)
+            #                 """
+            #                 HERE TODO: generate the 3D lane points from the prediction of one sample and add it to the visualizaton 
+            #                 """
+            #                 vis_rho_pred_b = vis_rho_pred[b,:,:]
+            #                 vis_delta_z_pred_b = vis_delta_z_pred[b,:,:]
+            #                 vis_cls_score_pred_b = vis_cls_score_pred[b,:,:] #via max I suppose
 
-                            break #visualize only one sample for now per vis iteration
+            #                 #list containing arrays of lane points
+            #                 gt_ipm, gt_2d = vis.draw_lanes(vis_batch["gt_lane_points"][b], vis_img, vis_batch["vis_gt_height"][b], vis_batch["vis_gt_pitch"][b])         
+                            
+            #                 cv2.imwrite("ipm_test.jpg",gt_ipm)
+            #                 cv2.imwrite("2d_test.jpg",gt_2d)
+                            
+            #                 gt_vis_ipm_images.append(gt_ipm)
+            #                 gt_vis_2d_images.append(gt_2d)
+
+            #                 break #visualize only one sample for now per vis iteration
 
 
 

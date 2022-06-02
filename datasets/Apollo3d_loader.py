@@ -139,6 +139,7 @@ class Visualization(object):
             ##TODO: draw in 3d
 
         return dummy_image, img
+
 class CalculateDistanceAngleOffests(object):
     def __init__(self, org_h, org_w, resize_h, resize_w, K, ipm_w, ipm_h, crop_y, top_view_region):
         
@@ -332,7 +333,6 @@ def generategt_pertile(gt_lanes, img , gt_cam_height, gt_cam_pitch, cfg):
             accumulator, thetas, rhos, lane_exist = HoughLine(tile_img)
             idx = np.argmax(accumulator)
 
-            #TODO:When RHO: -45(no lane) and RHO: != 45 (lane exist), verify If i need to train with -45 or 0
             rho = int(rhos[int(idx / accumulator.shape[1])])
             theta = thetas[int(idx % accumulator.shape[1])] #radians
 
@@ -506,11 +506,12 @@ if __name__ == "__main__":
     
     cfgs = Config.fromfile(config_path)
 
-    dataset = Apollo3d_loader(data_root, data_splits, cfg = cfgs, phase = 'test')
+    dataset = Apollo3d_loader(data_root, data_splits, cfg = cfgs, phase = 'train')
     loader = DataLoader(dataset, batch_size=cfgs.batch_size, shuffle=True, num_workers=cfgs.num_workers, collate_fn=collate_fn)
 
     
     for i, data in enumerate(loader):
-        print("===",len(data[3]))
-        print("lalantap", data[3])
+        print("checking the rho",data[5])
+        print("checking the detlat",data[9])
+        print("checking if class score",data[7])
         
