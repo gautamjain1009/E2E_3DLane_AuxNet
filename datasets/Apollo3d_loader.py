@@ -399,6 +399,21 @@ class Apollo3d_loader(Dataset):
 
         self.data = {l['raw_file']: l for l in json_data}
     
+    def normalize(self, data, min_data, max_data):
+        """
+        Normalise the data in the range [0,1]
+        Args:
+            data: data to be normalised
+            min_data: minimum value of the training data (torch.tensor)
+            max_data: maximum value of the training data (torch.tensor)
+
+        return: normalised data 
+        """
+                
+        norm_data = (data - min_data)/(max_data - min_data) 
+
+        return norm_data 
+
     def __len__(self):
         return len(self.image_keys)
 
@@ -437,12 +452,16 @@ class Apollo3d_loader(Dataset):
         batch.update({'gt_lanelines':gt_lanelines.copy()})
 
         gt_lateral_offset, gt_lateral_angleoffset, gt_cls_score, gt_lane_class, gt_delta_z = generategt_pertile(gt_lanelines, img.copy(), gt_camera_height, gt_camera_pitch, self.cfg)
+        
 
-        batch.update({'gt_rho':torch.from_numpy(gt_lateral_offset)})
+        norm_gt_lateral_offset = self.normalize(gt_lateral_offset, self.cfg.min_lateral_offset, self.cfg.max_lateral_offset)
+        norm_gt_delta_z = self.normalize(gt_delta_z, self.cfg.min_delta_z, self.cfg.max_delta_z)
+        
+        batch.update({'gt_rho':torch.from_numpy(norm_gt_lateral_offset)})
         batch.update({'gt_phi':torch.from_numpy(gt_lateral_angleoffset)})
         batch.update({'gt_clscore':torch.from_numpy(gt_cls_score)})
         batch.update({'gt_lane_class':torch.from_numpy(gt_lane_class)})
-        batch.update({'gt_delta_z':torch.from_numpy(gt_delta_z)})
+        batch.update({'gt_delta_z':torch.from_numpy(norm_gt_delta_z)})
         
         #convert the image to tensor
         ##TODO: check the effect on accuracy BGR2RGB
@@ -509,9 +528,23 @@ if __name__ == "__main__":
     dataset = Apollo3d_loader(data_root, data_splits, cfg = cfgs, phase = 'train')
     loader = DataLoader(dataset, batch_size=cfgs.batch_size, shuffle=True, num_workers=cfgs.num_workers, collate_fn=collate_fn)
 
-    
+    # max_list = []
+    # min_list = []
+
     for i, data in enumerate(loader):
         print("checking the rho",data[5])
-        print("checking the detlat",data[9])
-        print("checking if class score",data[7])
+    #     # print("checking the detlat",data[9])
+    #     # print("checking if class score",data[7])
         
+    #     for j in range(cfgs.batch_size):
+    #         print("checking min and max for iteration:::",i)
+    #         # print(data[9][i].shape)
+    #         # print(data[9].shape)
+    #         max_list.append(data[9][j].max())
+    #         min_list.append(data[9][j].min())
+    #         # print(data[9][i].max())
+    #         # print(data[9][i].min())
+
+
+    # print("The max value of delta_z for the whole dataset is:::",  max(max_list))
+    # print("The min value of delta_z for the whole dataset is:::",  min(min_list)) 

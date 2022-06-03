@@ -343,9 +343,6 @@ if __name__ == "__main__":
     else:
         # NOTE: TO use when multi class segmentation is done.
         criterion = torch.nn.NLLLoss().to(device)
-    
-
-
 
     #optimizer and scheduler
     param_group = model.parameters()
