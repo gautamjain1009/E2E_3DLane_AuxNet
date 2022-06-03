@@ -367,6 +367,20 @@ def generategt_pertile(gt_lanes, img , gt_cam_height, gt_cam_pitch, cfg):
 
     return gt_rho, gt_phi, gt_c, gt_lane_class, gt_delta_z
 
+def unnormalize(pred_data, min_pred, max_pred):
+    """
+    Unnormalize the predictions
+
+    Args:
+        pred_data: predictions
+        min_pred: minimum value calculated from the training data
+        max_pred: maximum value calculated from the training data
+    
+    Returns:
+        unnormalized predictions
+    """
+    return (pred_data * (max_pred - min_pred)) + min_pred
+
 class Apollo3d_loader(Dataset):
     def __init__(self, data_root, data_splits, phase = "train", cfg = None):
         super(Apollo3d_loader, self,).__init__()
