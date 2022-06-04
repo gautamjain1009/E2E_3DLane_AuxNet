@@ -44,7 +44,7 @@ aggregator = dict(type= "SCNN")
 
 heads = dict(type = 'PlainDecoder')
 
-
+pretrained_2dmodel_path = "/home/gautam/trained_nets/model_itr/r18_scnn_binary_2dLane_b16_6_June_.pth"
 """
 3d model params (anchorless) for Apollo SIM3D dataset
 """
@@ -123,12 +123,12 @@ May be to process the masks for the section 3.2 I need not multiply the ipm_h an
 # ###logging params
 date_it = "25_March_"
 train_run_name = "Anchorless3DLane" + date_it
-val_frequency = 10
+val_frequency = 1
 train_log_frequency = 200
 
 # #Hyperparams
 epochs = 100
-batch_size = 8
+batch_size = 2
 num_workers = 1
 l2_lambda = 1e-4
 log_frequency_steps = 200

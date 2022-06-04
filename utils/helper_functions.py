@@ -91,6 +91,19 @@ def homography_g2im(cam_pitch, cam_height, K):
     H_g2im = np.matmul(K, np.concatenate([R_g2c[:, 0:2], [[0], [cam_height], [0]]], 1))
     return H_g2im
 
+def palpha2alpha(phi_vec):
+    
+    """
+    Helper function to convert phi prob vector to abs angle value (0,360)
+
+    return: phi angle in radians
+    """
+    
+    phi_idx = np.argmax(phi_vec)
+
+    alpha = (2 * np.pi / 10) * phi_idx
+    return alpha 
+
 def polar_to_catesian(pred_phi, cam_pitch, cam_height, delta_z_pred, rho_pred):
     """
     NOTE: this function is valid only for one tile

@@ -12,6 +12,8 @@ import logging
 logging.basicConfig(level = logging.DEBUG)
 import json 
 from utils.helper_functions import *
+import matplotlib.pyplot as plt
+
 
 """
 Import just for unit test
@@ -54,6 +56,13 @@ class Visualization(object):
         self.x_max = top_view_region[1, 0]
 
         self.y_samples = np.linspace(self.min_y, self.max_y, num=100, endpoint=False)
+        
+        self.colors = [[1, 0, 0],  # red
+          [0, 1, 0],  # green
+          [0, 0, 1],  # blue
+          [1, 0, 1],  # purple
+          [0, 1, 1],  # cyan
+          [1, 0.7, 0]]  # orange
 
     def draw_lanes(self, gt_lanes, img, gt_cam_height, gt_cam_pitch):
         
@@ -91,6 +100,11 @@ class Visualization(object):
         flag = False     
         dummy_image = im_ipm.copy()
         
+        fig = plt.figure()
+        ax1 = fig.add_subplot(131, projection='3d')
+        ax2 = fig.add_subplot(132)
+        ax3 = fig.add_subplot(133)
+
         delta_z_dict = {}
         for i in range(cnt_gt):
             x_values = np.array(gt_lanes[i])[:, 0]
@@ -136,7 +150,18 @@ class Visualization(object):
                     dummy_image = cv2.line(dummy_image, (x_ipm_values[k - 1], y_ipm_values[k - 1]),
                                     (x_ipm_values[k], y_ipm_values[k]), (255,0,0), 1)
 
-            ##TODO: draw in 3d
+            #draw in 3d
+
+
+            ax1.plot(x_values[np.where(gt_visibility_mat[i, :])],
+                    self.y_samples[np.where(gt_visibility_mat[i, :])],
+                    z_values[np.where(gt_visibility_mat[i, :])], color= 'green', linewidth=1)
+
+
+        ax2.imshow(img[:,:,[2,1,0]])
+        ax3.imshow(dummy_image[:,:,[2,1,0]])
+        #save the plot as image
+        plt.savefig('test.png')
 
         return dummy_image, img
 
@@ -539,14 +564,14 @@ if __name__ == "__main__":
     
     cfgs = Config.fromfile(config_path)
 
-    dataset = Apollo3d_loader(data_root, data_splits, cfg = cfgs, phase = 'train')
+    dataset = Apollo3d_loader(data_root, data_splits, cfg = cfgs, phase = 'test')
     loader = DataLoader(dataset, batch_size=cfgs.batch_size, shuffle=True, num_workers=cfgs.num_workers, collate_fn=collate_fn)
 
     # max_list = []
     # min_list = []
 
     for i, data in enumerate(loader):
-        print("checking the rho",data[5])
+        print("checking the rho",data[5].shape)
     #     # print("checking the detlat",data[9])
     #     # print("checking if class score",data[7])
         
