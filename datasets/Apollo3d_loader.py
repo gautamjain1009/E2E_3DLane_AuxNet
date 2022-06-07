@@ -151,8 +151,6 @@ class Visualization(object):
                                     (x_ipm_values[k], y_ipm_values[k]), (255,0,0), 1)
 
             #draw in 3d
-
-
             ax1.plot(x_values[np.where(gt_visibility_mat[i, :])],
                     self.y_samples[np.where(gt_visibility_mat[i, :])],
                     z_values[np.where(gt_visibility_mat[i, :])], color= 'green', linewidth=1)
@@ -469,10 +467,7 @@ class Apollo3d_loader(Dataset):
         batch.update({"img_full_path": img_path})
 
         img = cv2.imread(img_path)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         
-        #crop
-        img = img[:self.cfg.org_h - self.h_crop, :self.cfg.org_w]
         #resize
         img = cv2.resize(img, (self.cfg.resize_h, self.cfg.resize_w), interpolation=cv2.INTER_AREA)
 
@@ -505,9 +500,8 @@ class Apollo3d_loader(Dataset):
         #convert the image to tensor
         ##TODO: check the effect on accuracy BGR2RGB
         img = transforms.ToTensor()(img)
-        img = img.float()
+        
         img = transforms.Normalize(mean= self.cfg.img_mean, std=self.cfg.img_std)(img)
- 
         batch.update({"image":img})
 
         return batch

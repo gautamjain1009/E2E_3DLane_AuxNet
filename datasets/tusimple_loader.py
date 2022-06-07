@@ -17,7 +17,7 @@ import collections
 from .registry import DATASETS, Process
 
 """
-The below code is inspired by: https://github.com/Turoad/lanedet/blob/main/lanedet/datasets/tusimple.py
+The below code is modified from: https://github.com/Turoad/lanedet/blob/main/lanedet/datasets/tusimple.py
 """
 
 #dataset split for tusimple already defined by the authors

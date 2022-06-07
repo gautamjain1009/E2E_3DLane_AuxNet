@@ -77,6 +77,7 @@ ipm_h = 208 * 2
 ipm_w = 128 * 2 
 
 augmentation = True
+
 img_mean = [0.485, 0.456, 0.406] 
 img_std = [0.229, 0.224, 0.225]
 
@@ -128,7 +129,7 @@ train_log_frequency = 200
 
 # #Hyperparams
 epochs = 100
-batch_size = 2
+batch_size = 1
 num_workers = 1
 l2_lambda = 1e-4
 log_frequency_steps = 200

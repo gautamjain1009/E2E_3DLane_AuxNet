@@ -14,7 +14,7 @@ class Combined2DModel(nn.Module):
         self.heads = build_heads(cfg)
 
     def forward(self, x):
-        x = self.backbone(x) # list of tensors
+        x = self.backbone(x) # list of tensors0
         # print("check the shape of the last feature map: ", x[-1].shape)
         x = self.aggregator(x[-1])
         x = self.heads(x)
@@ -35,6 +35,7 @@ def load_model(cfg, baseline = False, pretrained = False):
         print("=> Initialized 2d model weights")
     else:
         # load the pretrained weights 
+        print("=>loaded the pretrained weights for 2d model")
         model.load_state_dict(torch.load(cfg.pretrained_2dmodel_path))
         pass 
      

@@ -273,7 +273,6 @@ def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, 
     #reporting epoch train time 
     print(f"Epoch {epoch+1} done! Took {pprint_seconds(time.time()- start_point)}")
 
-##Main TODO: remove out['seg'] dependability of the pipieline 
 if __name__ == "__main__":
 
     cuda = torch.cuda.is_available()

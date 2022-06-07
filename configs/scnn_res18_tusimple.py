@@ -92,7 +92,7 @@ train_log_frequency = 200
 
 #Hyperparams
 epochs = 100
-batch_size = 8
+batch_size = 1
 l2_lambda = 1e-4
 log_frequency_steps = 200
 lr = 0.001 
@@ -106,3 +106,5 @@ bg_weight = 0.4 #used in the loss function to reduce the importance of one class
 
 train_type = "binary"
 # train_type = "multiclass"
+
+pretrained_2dmodel_path = "/home/gautam/trained_nets/model_itr/r18_scnn_binary_2dLane_b16_6_June_.pth"
