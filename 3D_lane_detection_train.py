@@ -527,43 +527,23 @@ if __name__ == "__main__":
                             #Cluster the tile embedding as per lane class
                             # return the tile labels with 0 marked as no lane
                             clustered_tiles = embedding_post_process(vis_embedding_b, vis_cls_score_pred_b) 
-
-                            # points = np.empty((0,3)) # N x 3 array of points
-                            # for i in range(vis_rho_pred_b.shape[0]):
-                            #     for j in range(vis_rho_pred_b.shape[1]):
                                     
-                                    # ##TODO: Turn this if onn later for the final submission
-                                    # if vis_cls_score_pred_b[i,j] == 1:
-                                        
-                                    #     try:
-                                    #          #extract points from predictions
-                                    #         rho = vis_rho_pred_b[i,j]
-                                    #         phi_vec = vis_phi_pred_b[:,i,j] # ---> 1d array of 10 elements containing probs
-                                    #         phi = palpha2alpha(phi_vec)
-                                    #         delta_z = vis_delta_z_pred_b[i,j]
-
-                                    #         lane_point = polar_to_catesian(phi, vis_cam_pitch_b, vis_cam_height_b, delta_z, rho)
-                                    #         points = np.append(points , lane_point.reshape(1,3), axis = 0)
-                                        
-                                    #     except: 
-                                    #         continue
-                                    #extract points from predictions
-                            
-                            for i, lane_idx in enumerate(clustered_tiles):
-                                if lane_idx == 0: #no lane ignored
+                            #extract points from predictions
+                            points = [] ## ---> [[points lane1 (lists)], [points lane2(lists))], ...]
+                            for i, lane_idx in enumerate(clustered_tiles): #must loop as the number of lanes present in the scene, max == 5
+                                if lane_idx == 0: #no lane ::ignored
                                     continue
                                 curr_idx = np.where( clustered_tiles == lane_idx) # --> tuple (rows, comumns) idxs
 
+                                rho_lane_i = vis_rho_pred_b[curr_idx[0], curr_idx[1]]
 
+                                phi_vec_lane_i =vis_phi_pred_b[:,curr_idx[0], curr_idx[1]] # ---> 1d array of 10 elements containing probs 
+                                phi_lane_i = [palpha2alpha(phi_vec_lane_i[:,i]) for i in range(phi_vec_lane_i.shape[1])]
+                                
+                                delta_z_lane_i = vis_delta_z_pred_b[curr_idx[0], curr_idx[1]]
 
-
-                            rho = vis_rho_pred_b[i,j]
-                            phi_vec = vis_phi_pred_b[:,i,j] # ---> 1d array of 10 elements containing probs
-                            phi = palpha2alpha(phi_vec)
-                            delta_z = vis_delta_z_pred_b[i,j]
-
-                            lane_point = polar_to_catesian(phi, vis_cam_pitch_b, vis_cam_height_b, delta_z, rho)
-                            points = np.append(points , lane_point.reshape(1,3), axis = 0)
+                                points_lane_i = [polar_to_catesian(phi_lane_i[i], vis_cam_pitch_b, vis_cam_height_b, delta_z_lane_i[i], rho_lane_i[i]) for i in range(len(phi_lane_i))]
+                                points.append(points_lane_i)  
                     
                             #list containing arrays of lane points
                             #TODO: obtain a single plot with all the plots

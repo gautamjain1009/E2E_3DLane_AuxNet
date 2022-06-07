@@ -156,7 +156,9 @@ def polar_to_catesian(pred_phi, cam_pitch, cam_height, delta_z_pred, rho_pred):
     
     cartesian_points = np.dot(rotation_matrix, translation_matrix) # --> (3, 1)
 
-    return cartesian_points
+    cartesian_points = cartesian_points.ravel().tolist()
+
+    return cartesian_points #--> List of 3 elements
 
 # def polar_to_cartesian_sample():
 
