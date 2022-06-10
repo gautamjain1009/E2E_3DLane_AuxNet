@@ -15,14 +15,15 @@ import numpy as np
 import torch.nn.functional as F
 import torch.optim as topt
 from timing import * 
-
-import torchvision.transforms as transforms
-
+import json
+from moviepy.video.io.bindings import mplfig_to_npimage
 #build import for different moduless
 from datasets.Apollo3d_loader import Apollo3d_loader, collate_fn, Visualization
 from models.build_model import load_model
 from utils.helper_functions import *
 from anchorless_detector import load_3d_model
+from evaluate import Apollo_3d_eval
+
 
 def classification_regression_loss(L1loss, BCEloss, CEloss, rho_pred, rho_gt, delta_z_pred, delta_z_gt, cls_pred, cls_gt, phi_pred, phi_gt ):
         """"
@@ -217,6 +218,15 @@ if __name__ == "__main__":
     else:
         #TODO: add the arguments Later for OpenLane dataset
         pass
+    
+    gt_file_path = os.path.join(data_split, 'test.json')
+    
+    #extract valid set labels for eval
+    global valid_set_labels
+    valid_set_labels = [json.loads(line) for line in open(gt_file_path).readlines()]
+    
+    #initialise the evaluator
+    evaluator = Apollo_3d_eval.LaneEval(cfg)
 
     #dataloader
     train_dataset = Apollo3d_loader(data_root, data_split, cfg = cfg, phase = "train")
@@ -322,19 +332,14 @@ if __name__ == "__main__":
                         "gt_delta_z":data[9].to(device)
                         })
 
-            """
-            update projection
-            update augmented matrix
-            optimzer.zero_grad() condition with e2e and simple  
-            """
             #TODO: add the condition for camera fix
             #update projection
-            # model3d.update_projection(cfg, batch["gt_height"], batch["gt_pitch"])
+            model3d.update_projection(cfg, batch["gt_height"], batch["gt_pitch"])
 
             # #update augmented matrix
-            # model3d.update_projection_for_data_aug(batch["aug_mat"])
+            model3d.update_projection_for_data_aug(batch["aug_mat"])
 
-            # optimizer2.zero_grad(set_to_none= True)
+            optimizer2.zero_grad(set_to_none= True)
 
             #forward pass
             o = model2d(batch["input_image"])
@@ -381,85 +386,140 @@ if __name__ == "__main__":
 
                 tr_loss  = 0.0
             
-            # # eval loop
-            # if should_run_valid:
+            # eval loop
+            if should_run_valid:
                 
-            #     #TODO: check this issue of missing outputs in .eval()
-            #     # model3d.eval()
-            #     model2d.train()
-            #     model3d.train()
-            #     print(">>>>>>>Validating<<<<<<<<")
-            #     val_loss = 0.0
-            #     val_batch_loss = 0.0
+                #TODO: check this issue of missing outputs in .eval()
+                # model3d.eval()
+                model2d.train()
+                model3d.train()
+                
+                print(">>>>>>>Validating<<<<<<<<")
+                val_loss = 0.0
+                val_batch_loss = 0.0
+                lane_pred_file = os.path.join(cfg.lane_pred_dir, 'test_pred_file.json')
+                
+                with torch.no_grad():
+                    with open(lane_pred_file, 'w') as jsonFile:
+                        for val_itr, val_data in enumerate(val_loader):
+                            val_batch = {}
+                            val_batch.update({"input_image":val_data[0].to(device),
+                                        "gt_height":val_data[1].to(device),
+                                        "gt_pitch":val_data[2].to(device),
+                                        "gt_lane_points":val_data[3],
+                                        "gt_rho":val_data[4].to(device),
+                                        "gt_phi":val_data[5].to(device).float(),
+                                        "gt_cls_score":val_data[6].to(device),
+                                        "gt_lane_cls":val_data[7].to(device),
+                                        "gt_delta_z":val_data[8].to(device),
+                                        "img_id":val_data[10],
+                                        "val_gt_height":val_data[1].cpu().numpy(),
+                                        "val_gt_pitch":val_data[2].cpu().numpy()})
 
-            #     with torch.no_grad():
-            #         for val_itr, val_data in enumerate(val_loader):
-            #             val_batch = {}
-            #             val_batch.update({"input_image":val_data[0].to(device),
-            #                         "gt_height":val_data[1].to(device),
-            #                         "gt_pitch":val_data[2].to(device),
-            #                         "gt_lane_points":val_data[3],
-            #                         "gt_rho":val_data[4].to(device),
-            #                         "gt_phi":val_data[5].to(device).float(),
-            #                         "gt_cls_score":val_data[6].to(device),
-            #                         "gt_lane_cls":val_data[7].to(device),
-            #                         "gt_delta_z":val_data[8].to(device)})
+                            #update projection
+                            model3d.update_projection(cfg, val_batch["gt_height"], val_batch["gt_pitch"])
+                            
+                            val_o = model2d(val_batch["input_image"])                
+                            val_o = val_o.softmax(dim=1)
+                            val_o = val_o/torch.max(torch.max(val_o, dim=2, keepdim=True)[0], dim=3, keepdim=True)[0] 
+                            # print("shape of o before max", o.shape)
+                            val_o = val_o[:,1:,:,:]
 
-            #             #update projection
-            #             model3d.update_projection(cfg, val_batch["gt_height"], val_batch["gt_pitch"])
+                            val_out1 = model3d(val_o)
+
+                            val_out_pathway1 = val_out1["embed_out"]
+                            val_out_pathway2 = val_out1["bev_out"]
+
+                            val_rho_pred = val_out_pathway2[:,0,...]
+                            val_delta_z_pred = val_out_pathway2[:,1,...]
+                            val_cls_score_pred = val_out_pathway2[:,2,...]
+                            val_phi_pred = val_out_pathway2[:,3:,...]
+
+                            val_loss1 = discriminative_loss(val_out1["embed_out"], val_batch["gt_lane_cls"],cfg)
+                            val_loss2 = classification_regression_loss(L1loss, BCEloss, CEloss, val_rho_pred, val_batch["gt_rho"], val_delta_z_pred, val_batch["gt_delta_z"], val_cls_score_pred, val_batch["gt_cls_score"], val_phi_pred, val_batch["gt_phi"])
                         
-            #             val_o = model2d(batch["input_image"])
-            #             val_o = val_o.softmax(dim=1)
-            #             val_o = val_o/torch.max(torch.max(val_o, dim=2, keepdim=True)[0], dim=3, keepdim=True)[0] 
-            #             # print("shape of o before max", o.shape)
-            #             val_o = val_o[:,1:,:,:]
+                            val_overall_loss = cfg.w_clustering_Loss * val_loss1 + cfg.w_classification_Loss * val_loss2
+                            
+                            val_batch_loss = val_overall_loss.detach().cpu() / cfg.batch_size
+                            val_loss += val_batch_loss
+                        
+                            if (val_itr +1) % 10 == 0:
+                                val_running_loss = val_loss.item() / (val_itr + 1)
+                                print(f"Validation: {val_itr+1} steps of ~{val_loader_len}.  Validation Running Loss {val_running_loss:.4f}")
 
-            #             val_out1 = model3d(val_o)
+                            for b in range(cfg.batch_size):
+                                #offset predictions
+                                val_rho_pred_b = val_rho_pred[b,:,:].detach().cpu().numpy()
+                                val_phi_pred_b = val_phi_pred[b,:,:,:].detach().cpu().numpy()
+                                val_delta_z_pred_b = val_delta_z_pred[b,:,:].detach().cpu().numpy()
+                                val_cls_score_pred_b = val_cls_score_pred[b,:,:].detach().cpu().numpy()
+                                
+                                #embedding predictions
+                                val_embedding_b = val_out_pathway1[b,:,:,:] # - (4, H, W)
+                                val_embedding_b = p(val_embedding_b) # (4, H/tile_size, W/tile_size)
 
-            #             val_out_pathway1 = val_out1["embed_out"]
-            #             val_out_pathway2 = val_out1["bev_out"]
+                                val_embedding_b = val_embedding_b.detach().cpu().numpy()
+                                val_embedding_b = np.transpose(val_embedding_b, (1,2,0)) # (H/tile_size, W/tile_size, 4)
 
-            #             val_rho_pred = val_out_pathway2[:,0,...]
-            #             val_delta_z_pred = val_out_pathway2[:,1,...]
-            #             val_cls_score_pred = val_out_pathway2[:,2,...]
-            #             val_phi_pred = val_out_pathway2[:,3:,...]
+                                # print(vis_cls_score_pred_b)
+                                val_cls_score_pred_b = val_cls_score_pred_b.round() # probs to 0 or 1
 
-            #             val_loss1 = discriminative_loss(val_out1["embed_out"], val_batch["gt_lane_cls"],cfg)
-            #             val_loss2 = classification_regression_loss(L1loss, BCEloss, CEloss, val_rho_pred, val_batch["gt_rho"], val_delta_z_pred, val_batch["gt_delta_z"], val_cls_score_pred, val_batch["gt_cls_score"], val_phi_pred, val_batch["gt_phi"])
+                                #unormalize the rho and delta z
+                                val_rho_pred_b = val_rho_pred_b * (cfg.max_lateral_offset - cfg.min_lateral_offset) + cfg.min_lateral_offset
+                                val_delta_z_pred_b = val_delta_z_pred_b * (cfg.max_delta_z - cfg.min_delta_z) + cfg.min_delta_z
+
+                                val_cam_height_b = val_batch["val_gt_height"][b]
+                                val_cam_pitch_b = val_batch["val_gt_pitch"][b]
+                                
+                                #Cluster the tile embedding as per lane class
+                                # return the tile labels: 0 marked as no lane
+                                val_clustered_tiles = embedding_post_process(val_embedding_b, val_cls_score_pred_b) 
+                                print("check if the num of lanes::",np.unique(val_clustered_tiles))
+                                
+                                # extract points from predictions
+                                points = [] ## ---> [[points lane1 (lists)], [points lane2(lists))], ...]
+                                for i, lane_idx in enumerate(np.unique(val_clustered_tiles)): #must loop as the number of lanes present in the scene, max == 5
+                                    if lane_idx == 0: #no lane ::ignored
+                                        continue
+                                    curr_idx = np.where(val_clustered_tiles == lane_idx) # --> tuple (rows, comumns) idxs
+
+                                    rho_lane_i = val_rho_pred_b[curr_idx[0], curr_idx[1]]
+
+                                    phi_vec_lane_i =val_phi_pred_b[:,curr_idx[0], curr_idx[1]] # ---> 1d array of 10 elements containing probs 
+                                    phi_lane_i = [palpha2alpha(phi_vec_lane_i[:,i]) for i in range(phi_vec_lane_i.shape[1])]
+                                    
+                                    delta_z_lane_i = val_delta_z_pred_b[curr_idx[0], curr_idx[1]]
+
+                                    points_lane_i = [polar_to_catesian(phi_lane_i[i], val_cam_pitch_b, val_cam_height_b, delta_z_lane_i[i], rho_lane_i[i]) for i in range(len(phi_lane_i))]
+                                    points.append(points_lane_i)
+                                
+                                #write the lane points per batch to the pred_file for evaluation
+                                img_id = val_batch["img_id"][b]
+                                json_line =valid_set_labels[img_id]
+                                json_line["laneLines"] = points
+                                json.dump(json_line, jsonFile)
+                                jsonFile.write("\n")
                     
-            #             val_overall_loss = cfg.w_clustering_Loss * val_loss1 + cfg.w_classification_Loss * val_loss2
+                        val_avg_loss = val_loss / (val_itr +1)
+                        print(f"Validation Loss: {val_avg_loss}")
                         
-            #             val_batch_loss = val_overall_loss.detach().cpu() / cfg.batch_size
-            #             val_loss += val_batch_loss
+                        #TODO: add a condition for e2e if train whole model
+                        scheduler2.step(val_avg_loss.item())
+                        
+                    eval_stats = evaluator.bench_one_submit(lane_pred_file, gt_file_path)
+                    print("========>>> EVAL STATS:", eval_stats)
                     
-            #             if (val_itr +1) % 1 == 0:
-            #                 val_running_loss = val_loss.item() / (val_itr + 1)
-            #                 print(f"Validation: {val_itr+1} steps of ~{val_loader_len}.  Validation Running Loss {val_running_loss:.4f}")
-                        
-
-                        
-            #             """
-            #             TODO: 
-            #             1. Open the whole pred json file or an array where the points are stored
-            #             2. Calacualate metric here and return the metric value and create a model checkpoint here as per the metric value
-            #             """
-
-            #         val_avg_loss = val_loss / (val_itr +1)
-            #         print(f"Validation Loss: {val_avg_loss}")
-                    
-            #         #TODO: add a condition for e2e if train whole model
-            #         scheduler2.step(val_avg_loss.item())
-
+                    """
+                    TODO: on the bassis of the eval stats, create a model checkpoint
+                    """
             if should_run_vis:
                 
                 print(">>>>>>>Visualizing<<<<<<<<")
                 vis = Visualization(cfg.org_h, cfg.org_w, cfg.resize_h, cfg.resize_w, cfg.K, cfg.ipm_w, cfg.ipm_h, cfg.crop_y, cfg.top_view_region)
-                
-                with torch.no_grad():
-                    
-                    model2d.train()
-                    model3d.train()
 
+                model2d.train()
+                model3d.train()
+                with torch.no_grad():
                     for vis_itr, vis_data in enumerate(val_loader):
                         vis_batch = {}
                         vis_batch.update({"vis_gt_height":vis_data[1].cpu().numpy(),
@@ -525,15 +585,16 @@ if __name__ == "__main__":
                             vis_cam_pitch_b = vis_batch["vis_gt_pitch"][b]
                             
                             #Cluster the tile embedding as per lane class
-                            # return the tile labels with 0 marked as no lane
+                            # return the tile labels: 0 marked as no lane
                             clustered_tiles = embedding_post_process(vis_embedding_b, vis_cls_score_pred_b) 
-                                    
+                            print("check if the num of lanes::",np.unique(clustered_tiles))
+                            
                             #extract points from predictions
                             points = [] ## ---> [[points lane1 (lists)], [points lane2(lists))], ...]
-                            for i, lane_idx in enumerate(clustered_tiles): #must loop as the number of lanes present in the scene, max == 5
+                            for i, lane_idx in enumerate(np.unique(clustered_tiles)): #must loop as the number of lanes present in the scene, max == 5
                                 if lane_idx == 0: #no lane ::ignored
                                     continue
-                                curr_idx = np.where( clustered_tiles == lane_idx) # --> tuple (rows, comumns) idxs
+                                curr_idx = np.where(clustered_tiles == lane_idx) # --> tuple (rows, comumns) idxs
 
                                 rho_lane_i = vis_rho_pred_b[curr_idx[0], curr_idx[1]]
 
@@ -544,18 +605,26 @@ if __name__ == "__main__":
 
                                 points_lane_i = [polar_to_catesian(phi_lane_i[i], vis_cam_pitch_b, vis_cam_height_b, delta_z_lane_i[i], rho_lane_i[i]) for i in range(len(phi_lane_i))]
                                 points.append(points_lane_i)  
-                    
+                            
                             #list containing arrays of lane points
                             #TODO: obtain a single plot with all the plots
-                            gt_ipm, gt_2d = vis.draw_lanes(vis_batch["gt_lane_points"][b], vis_img, vis_batch["vis_gt_height"][b], vis_batch["vis_gt_pitch"][b])         
+                            gt_fig = vis.draw_lanes(vis_batch["gt_lane_points"][b], vis_img, vis_batch["vis_gt_height"][b], vis_batch["vis_gt_pitch"][b])         
                             
-                            #obtain the similar thing for the predicted lane points
+                            pred_fig = vis.draw_lanes(points, vis_img, vis_batch["vis_gt_height"][b], vis_batch["vis_gt_pitch"][b])
+                            
+                            # plt.savefig("train_vis.png")
+                            # print("Done dona done")
+                            # obtain the similar thing for the predicted lane points
+                            
+                            gt_numpy_fig = mplfig_to_npimage(gt_fig)
+                            pred_numpy_fig = mplfig_to_npimage(pred_fig)
 
-                            # cv2.imwrite("ipm_test.jpg",gt_ipm)
-                            # cv2.imwrite("2d_test.jpg",gt_2d)
+                            # cv2.imwrite("ipm_test.jpg",gt_numpy_fig)
+                            # cv2.imwrite("2d_test.jpg",pred_numpy_fig)
                             
-                            gt_vis_ipm_images.append(gt_ipm)
-                            gt_vis_2d_images.append(gt_2d)
+                            # gt_vis_ipm_images.append(gt_ipm)
+                            # gt_vis_2d_images.append(gt_2d)
+                            #TODO: log these images with wandb
 
                             break #visualize only one sample for now per vis iteration
                         break

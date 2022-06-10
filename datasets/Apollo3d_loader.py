@@ -100,7 +100,7 @@ class Visualization(object):
         flag = False     
         dummy_image = im_ipm.copy()
         
-        fig = plt.figure()
+        fig = plt.figure(figsize=(10, 10))
         ax1 = fig.add_subplot(131, projection='3d')
         ax2 = fig.add_subplot(132)
         ax3 = fig.add_subplot(133)
@@ -159,9 +159,9 @@ class Visualization(object):
         ax2.imshow(img[:,:,[2,1,0]])
         ax3.imshow(dummy_image[:,:,[2,1,0]])
         #save the plot as image
-        plt.savefig('test.png')
+        # plt.savefig('test.png')
 
-        return dummy_image, img
+        return fig
 
 class CalculateDistanceAngleOffests(object):
     def __init__(self, org_h, org_w, resize_h, resize_w, K, ipm_w, ipm_h, crop_y, top_view_region):
@@ -410,7 +410,6 @@ class Apollo3d_loader(Dataset):
         
         self.cfg = cfg
         self.data_root = data_root
-        self.data_root = data_root
         self.data_splits = data_splits
         self.phase = phase
         self.camera_intrinsics = self.cfg.K
@@ -458,6 +457,10 @@ class Apollo3d_loader(Dataset):
 
         batch = {}
 
+        index = idx
+        batch.update({"idx": index})
+
+
         gtdata = self.data[self.image_keys[idx]]
         img_path = os.path.join(self.data_root, gtdata['raw_file'])
         
@@ -503,7 +506,7 @@ class Apollo3d_loader(Dataset):
         
         img = transforms.Normalize(mean= self.cfg.img_mean, std=self.cfg.img_std)(img)
         batch.update({"image":img})
-
+        
         return batch
         
 def collate_fn(batch):
@@ -539,15 +542,17 @@ def collate_fn(batch):
     
     gt_image_full_path =[item["img_full_path"] for item in batch]
 
+    idx_data = [item['idx'] for item in batch]
+    
     if 'aug_mat' in batch[0]:
         aug_mat_data = [item['aug_mat'] for item in batch]
         aug_mat_data = torch.stack(aug_mat_data, dim = 0)
 
-        return [img_data, aug_mat_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data, gt_image_full_path]
-                    # 0      1                2                   3                    4                    5                 6                 7                 8          9
+        return [img_data, aug_mat_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data, gt_image_full_path, idx_data]
+                    # 0      1                2                   3                    4                    5                 6                 7                 8          9              10                  11
     else: #no augmentation
-        return [img_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data, gt_image_full_path]
-                    #0      1                           2                   3                    4             5                 6                 7                 8          9    
+        return [img_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data, gt_image_full_path, idx_data]
+                    #0      1                           2                   3                    4             5                 6                 7                 8          9                   10              
 if __name__ == "__main__":
 
     #unit test for the data loader
@@ -566,6 +571,7 @@ if __name__ == "__main__":
 
     for i, data in enumerate(loader):
         print("checking the rho",data[5].shape)
+        print("checking the values of idx",data[10])
     #     # print("checking the detlat",data[9])
     #     # print("checking if class score",data[7])
         

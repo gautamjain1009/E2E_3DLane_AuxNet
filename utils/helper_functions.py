@@ -92,6 +92,22 @@ def embedding_post_process(embedding, bin_seg, band_width=1.5, max_num_lane=5):
            cluster_result[cluster_result==idx] = 0
     return cluster_result
 
+def prune_3d_lane_by_range(lane_3d, x_min, x_max):
+    # TODO: solve hard coded range later
+    # remove points with y out of range
+    # 3D label may miss super long straight-line with only two points: Not have to be 200, gt need a min-step
+    # 2D dataset requires this to rule out those points projected to ground, but out of meaningful range
+    lane_3d = lane_3d[np.logical_and(lane_3d[:, 1] > 0, lane_3d[:, 1] < 200), ...]
+
+    # remove lane points out of x range
+    lane_3d = lane_3d[np.logical_and(lane_3d[:, 0] > x_min,
+                                     lane_3d[:, 0] < x_max), ...]
+    return lane_3d
+
+def prune_3d_lane_by_visibility(lane_3d, visibility):
+    lane_3d = lane_3d[visibility > 0, ...]
+    return lane_3d
+
 def homography_crop_resize(org_img_size, crop_y, resize_img_size):
     """
         compute the homography matrix transform original image to cropped and resized image

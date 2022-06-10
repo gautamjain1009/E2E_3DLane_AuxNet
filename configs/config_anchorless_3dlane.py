@@ -1,5 +1,6 @@
 import numpy as np 
 
+dataset_dir = "/home/gautam/e2e/lane_detection/3d_approaches/3d_dataset/Apollo_Sim_3D_Lane_Release"
 # #TODO: Optimize this config
 # """
 # Dataloader params
@@ -45,6 +46,8 @@ aggregator = dict(type= "SCNN")
 heads = dict(type = 'PlainDecoder')
 
 pretrained_2dmodel_path = "/home/gautam/trained_nets/model_itr/r18_scnn_binary_2dLane_b16_6_June_.pth"
+lane_pred_dir = "/home/gautam/Thesis/E2E_3DLane_AuxNet/nets/3dlane_detection"
+
 """
 3d model params (anchorless) for Apollo SIM3D dataset
 """
@@ -81,6 +84,7 @@ augmentation = True
 img_mean = [0.485, 0.456, 0.406] 
 img_std = [0.229, 0.224, 0.225]
 
+no_centerline = True
 """
 Below values are calculated by iterating over the train dataset
 """
@@ -124,13 +128,13 @@ May be to process the masks for the section 3.2 I need not multiply the ipm_h an
 # ###logging params
 date_it = "25_March_"
 train_run_name = "Anchorless3DLane" + date_it
-val_frequency = 1
+val_frequency = 5
 train_log_frequency = 200
 
 # #Hyperparams
 epochs = 100
-batch_size = 1
-num_workers = 1
+batch_size = 2
+num_workers = 3
 l2_lambda = 1e-4
 log_frequency_steps = 200
 lr = 0.001 
