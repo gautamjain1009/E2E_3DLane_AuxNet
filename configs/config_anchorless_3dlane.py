@@ -53,7 +53,7 @@ lane_pred_dir = "/home/gautam/Thesis/E2E_3DLane_AuxNet/nets/3dlane_detection"
 """
 # encode_mode ="overlapping"
 # encode_mode = "1x1non"
-encode_mode = "32x32non"
+encode_mode = "overlapping"
 # encode_mode = "1x1_mix_32X32"
 
 #(channles, K_size, padding, stride)
@@ -85,14 +85,16 @@ img_mean = [0.485, 0.456, 0.406]
 img_std = [0.229, 0.224, 0.225]
 
 no_centerline = True
+
 """
 Below values are calculated by iterating over the train dataset
 """
 min_lateral_offset = -23
 max_lateral_offset = 23
 
-min_delta_z = -3 
-max_delta_z = 3
+#TODO: NOTE: need to calculate this value first over the train dataset
+min_delta_z = -1.5
+max_delta_z = 1.5
 
 #init camera height and pitch
 cam_height = 1.55
@@ -118,6 +120,7 @@ n_bins = 10
 delta_pull = 0.05 ## delta_v 
 delta_push = 1.5 ## delta_d 
 tile_size = 32
+embed_dim = 4
 
 """""
 BIG BIG BIG NOTE: Is that the spatial size of ipm and BEV IPM projection are different?
@@ -133,8 +136,8 @@ train_log_frequency = 200
 
 # #Hyperparams
 epochs = 100
-batch_size = 2
-num_workers = 3
+batch_size = 8
+num_workers = 8
 l2_lambda = 1e-4
 log_frequency_steps = 200
 lr = 0.001 
@@ -147,8 +150,8 @@ prefetch_factor = 2
 bg_weight = 0.4 #used in the loss function to reduce the importance of one class in tusimple
 
 #TODO: try different combination later as per the gradients and in the end try to balance them
-w_clustering_Loss = 0.3
-w_classification_Loss = 0.7
+w_clustering_Loss = 0.2
+w_classification_Loss = 0.8
 
 
 """

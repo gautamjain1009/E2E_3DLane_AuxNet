@@ -4,8 +4,7 @@ import torch.nn as nn
 import cv2 
 from tqdm import tqdm
 import os 
-# import dotenv
-# dotenv.load_dotenv()
+import dotenv
 import wandb
 import time
 from utils.config import Config
@@ -81,33 +80,116 @@ def classification_regression_loss(L1loss, BCEloss, CEloss, rho_pred, rho_gt, de
         
         return Average_OverallLoss
 
-def discriminative_loss(embedding, delta_c_gt, cfg, device = None):  
+# NOTE: Discriminative loss for embedding feaetures without max pool
+# def discriminative_loss(embedding, delta_c_gt, cfg, device = None):  
     
+#     """
+#     Arguments:
+#     Embedding == f_ij 
+#     delta_c = del_i,j for classification if that tile is part of the lane or not
+#     tile_size = (grid_w, grid_h) --> squre patch
+    
+#     return:
+#     clustering loss/ clustering loss (aka), push and pull loss
+#     """
+
+#     pull_loss = torch.tensor(0 ,dtype = embedding.dtype, device = embedding.device)
+#     push_loss = torch.tensor(0, dtype = embedding.dtype, device = embedding.device)
+    
+#     #iterating over batches
+#     for b in range(embedding.shape[0]):
+        
+#         embedding_b = embedding[b]  #---->(4,H*,W*)
+#         delta_c_gt_b = delta_c_gt[b] # will be a tensor of size (13,8) or whatever the grid size is consits of lane labels
+        
+#         #delta_c_gt ---> [batch_size, 13, 8] where every element tells you which lane you belong too. 
+
+#         ##TODO: Add condition for 0 class
+#         labels = torch.unique(delta_c_gt_b) #---> array of type of labels
+#         num_lanes = len(labels)
+        
+#         if num_lanes==0:
+#             _nonsense = embedding.sum()
+#             _zero = torch.zeros_like(_nonsense)
+#             pull_loss = pull_loss + _nonsense * _zero
+#             push_loss = push_loss + _nonsense * _zero
+#             continue
+
+#         centroid_mean = []
+#         for lane_c in labels: # it will run for the number of lanes basically l_c = 1,2,3,4,5 
+            
+#             #1. Obtain one hot tensor for tile class labels
+#             delta_c = torch.where(delta_c_gt_b==lane_c,1,0) # bool tensor for lane_c ----> size (13,8)
+
+#             tensor, count = torch.unique(delta_c, return_counts=True)
+#             N_c = count[1].item() # number of tiles in lane_c
+            
+#             patchwise_mean = []
+            
+#             #extracting tile patches from the embedding tensor
+#             for r in range(0,embedding_b.shape[1],cfg.tile_size):
+#                 for c in range(0,embedding_b.shape[2],cfg.tile_size):
+                    
+#                     f_ij = embedding_b[:,r:r+cfg.tile_size,c:c+cfg.tile_size] #----> (4,32,32) 
+#                     f_ij = f_ij.reshape(f_ij.shape[0], f_ij.shape[1]*f_ij.shape[2])
+                    
+#                     #2. calculate mean for lane_c (mu_c) patchwise
+#                     mu_c = torch.sum(f_ij * delta_c[int(r/cfg.tile_size),int(c/cfg.tile_size)], dim = 1)/N_c #--> (4) mu for all the four embeddings
+#                     patchwise_mean.append(mu_c)
+#                     #3. calculate the pull loss patchwise
+                    
+#                     pull_loss = pull_loss + torch.mean(F.relu( delta_c[int(r/cfg.tile_size),int(c/cfg.tile_size)] * torch.norm(f_ij-mu_c.reshape(4,1),dim = 0)- cfg.delta_pull)**2) / num_lanes
+                    
+#             patchwise_centroid = torch.stack(patchwise_mean) #--> (32*32,4)
+#             patchwise_centroid = torch.mean(patchwise_centroid, dim =0) #--> (4)
+            
+#             centroid_mean.append(patchwise_centroid)
+
+#         centroid_mean = torch.stack(centroid_mean) #--> (num_lanes,4)
+
+#         if num_lanes > 1:
+            
+#             #4. calculate the push loss
+#             centroid_mean_A = centroid_mean.reshape(-1,1, 4)
+#             centroid_mean_B =centroid_mean.reshape(1,-1, 4)
+
+#             dist = torch.norm(centroid_mean_A-centroid_mean_B, dim = 2) #--> (num_lanes,num_lanes)
+#             dist = dist + torch.eye(num_lanes, dtype = dist.dtype, device = dist.device) * cfg.delta_push
+            
+#             #divide by 2 to compensate the double loss calculation
+#             push_loss = push_loss + torch.sum(F.relu(-dist + cfg.delta_push)**2) / (num_lanes * (num_lanes-1)) / 2
+    
+#     pull_loss = pull_loss / cfg.batch_size
+#     push_loss = push_loss / cfg.batch_size
+
+#     loss_embedding = pull_loss + push_loss 
+#     return loss_embedding # batch loss
+
+#NOTE: Discriminative loss for embedding feaetures with max pool
+def discriminative_loss(embedding, seg_gt, cfg, device = None):
     """
-    Arguments:
-    Embedding == f_ij 
-    delta_c = del_i,j for classification if that tile is part of the lane or not
-    tile_size = (grid_w, grid_h) --> squre patch
+    Arguments: 
+    (H* = tile_height, W* = tile_width)
+    Embedding == (1,4,H*,W*)
+    seg_gt = del_i,j for classification if that tile is part of the lane or not
     
     return:
     clustering loss/ clustering loss (aka), push and pull loss
     """
 
-    pull_loss = torch.tensor(0 ,dtype = embedding.dtype, device = embedding.device)
-    push_loss = torch.tensor(0, dtype = embedding.dtype, device = embedding.device)
-    
-    #iterating over batches
-    for b in range(embedding.shape[0]):
-        
-        embedding_b = embedding[b]  #---->(4,H*,W*)
-        delta_c_gt_b = delta_c_gt[b] # will be a tensor of size (13,8) or whatever the grid size is consits of lane labels
-        
-        #delta_c_gt ---> [batch_size, 13, 8] where every element tells you which lane you belong too. 
+    batch_size = embedding.shape[0]
 
-        ##TODO: Add condition for 0 class
-        labels = torch.unique(delta_c_gt_b) #---> array of type of labels
+    pull_loss = torch.tensor(0, dtype=embedding.dtype, device=embedding.device) #(var)
+    push_loss = torch.tensor(0, dtype=embedding.dtype, device=embedding.device) #(push)
+
+    for b in range(embedding.shape[0]):
+        embedding_b = embedding[b] # (embed_dim, H, W)
+        seg_gt_b = seg_gt[b]
+
+        labels = torch.unique(seg_gt_b) # ---> array of type of labels
+        labels = labels[labels!=0]
         num_lanes = len(labels)
-        
+
         if num_lanes==0:
             _nonsense = embedding.sum()
             _zero = torch.zeros_like(_nonsense)
@@ -116,54 +198,36 @@ def discriminative_loss(embedding, delta_c_gt, cfg, device = None):
             continue
 
         centroid_mean = []
-        for lane_c in labels: # it will run for the number of lanes basically l_c = 1,2,3,4,5 
+        for lane_idx in labels: # it will run for the number of lanes basically l_c = 1,2,3,4,5 
             
-            #1. Obtain one hot tensor for tile class labels
-            delta_c = torch.where(delta_c_gt_b==lane_c,1,0) # bool tensor for lane_c ----> size (13,8)
+            seg_mask_i = (seg_gt_b == lane_idx)
+   
+            if not seg_mask_i.any():
+                continue
+            embedding_i = embedding_b[:, seg_mask_i]
 
-            tensor, count = torch.unique(delta_c, return_counts=True)
-            N_c = count[1].item() # number of tiles in lane_c
-            
-            patchwise_mean = []
-            
-            #extracting tile patches from the embedding tensor
-            for r in range(0,embedding_b.shape[1],cfg.tile_size):
-                for c in range(0,embedding_b.shape[2],cfg.tile_size):
-                    
-                    f_ij = embedding_b[:,r:r+cfg.tile_size,c:c+cfg.tile_size] #----> (4,32,32) 
-                    f_ij = f_ij.reshape(f_ij.shape[0], f_ij.shape[1]*f_ij.shape[2])
-                    
-                    #2. calculate mean for lane_c (mu_c) patchwise
-                    mu_c = torch.sum(f_ij * delta_c[int(r/cfg.tile_size),int(c/cfg.tile_size)], dim = 1)/N_c #--> (4) mu for all the four embeddings
-                    patchwise_mean.append(mu_c)
-                    #3. calculate the pull loss patchwise
-                    
-                    pull_loss = pull_loss + torch.mean(F.relu( delta_c[int(r/cfg.tile_size),int(c/cfg.tile_size)] * torch.norm(f_ij-mu_c.reshape(4,1),dim = 0)- cfg.delta_pull)**2) / num_lanes
-                    
-            patchwise_centroid = torch.stack(patchwise_mean) #--> (32*32,4)
-            patchwise_centroid = torch.mean(patchwise_centroid, dim =0) #--> (4)
-            
-            centroid_mean.append(patchwise_centroid)
+            mean_i = torch.mean(embedding_i, dim=1)
+            centroid_mean.append(mean_i)
 
-        centroid_mean = torch.stack(centroid_mean) #--> (num_lanes,4)
+            # ---------- pull_loss -------------
+            pull_loss = pull_loss + torch.mean( F.relu(torch.norm(embedding_i-mean_i.reshape(4,1), dim=0) - cfg.delta_pull)**2 ) / num_lanes
+        centroid_mean = torch.stack(centroid_mean)  # (n_lane, embed_dim)
 
         if num_lanes > 1:
-            
-            #4. calculate the push loss
-            centroid_mean_A = centroid_mean.reshape(-1,1, 4)
-            centroid_mean_B =centroid_mean.reshape(1,-1, 4)
+            centroid_mean1 = centroid_mean.reshape(-1, 1, cfg.embed_dim)
+            centroid_mean2 = centroid_mean.reshape(1, -1, cfg.embed_dim)
 
-            dist = torch.norm(centroid_mean_A-centroid_mean_B, dim = 2) #--> (num_lanes,num_lanes)
-            dist = dist + torch.eye(num_lanes, dtype = dist.dtype, device = dist.device) * cfg.delta_push
-            
-            #divide by 2 to compensate the double loss calculation
+            dist = torch.norm(centroid_mean1-centroid_mean2, dim=2)  # shape (num_lanes, num_lanes)
+            dist = dist + torch.eye(num_lanes, dtype=dist.dtype, device=dist.device) * cfg.delta_push # diagonal elements are 0, now mask above delta_d
+
+            # divided by two for double calculated loss above, for implementation convenience
             push_loss = push_loss + torch.sum(F.relu(-dist + cfg.delta_push)**2) / (num_lanes * (num_lanes-1)) / 2
-    
-    pull_loss = pull_loss / cfg.batch_size
-    push_loss = push_loss / cfg.batch_size
 
-    loss_embedding = pull_loss + push_loss 
-    return loss_embedding # batch loss
+    pull_loss = pull_loss / batch_size
+    push_loss = push_loss / batch_size
+
+    loss_embedding = pull_loss + push_loss
+    return loss_embedding
 
 if __name__ == "__main__":
     cuda = torch.cuda.is_available()
@@ -176,6 +240,7 @@ if __name__ == "__main__":
     
     print("=> Using '{}' for computation ".format(device))
 
+    print("=>Initializing CLI args")
     parser = argparse.ArgumentParser(description="Anchorless 3D Lane Detection Train")
     parser.add_argument("--dataset_type", type = str, default = "Apollo3d", help = "Dataset type")
     parser.add_argument("--config", type=str, default="configs/config_anchorless_3dlane.py", help="config file")
@@ -194,6 +259,9 @@ if __name__ == "__main__":
 
     #load config file
     cfg = Config.fromfile(args.config)
+
+    #wandb init 
+    run = wandb.init(entity = os.environ["WANDB_ENTITY"], project = os.environ["WANDB_PROJECT"], name = cfg.train_run_name, mode = 'offline' if args.no_wandb else 'online')
 
     # for reproducibility
     torch.manual_seed(args.seed)
@@ -247,9 +315,13 @@ if __name__ == "__main__":
         #load 2d model from checkpoint and train the whole pipeline end-to-end
         model2d = load_model(cfg, baseline=args.baseline, pretrained = args.pretrained2d).to(device) #args.pretrained2d == TRUE
         model3d = load_3d_model(cfg, device, pretrained=args.pretrained3d).to(device) 
+        wandb.watch(model2d)
+        wandb.watch(model3d)
+
     else: 
         model2d = load_model(cfg, baseline=args.baseline, pretrained = args.pretrained2d).to(device) #args.pretrained2d == TRUE
         model3d = load_3d_model(cfg, device, pretrained=args.pretrained3d).to(device)
+        wandb.watch(model3d)
 
     #general loss functions
     L1loss= nn.L1Loss().to(device)
@@ -293,9 +365,17 @@ if __name__ == "__main__":
     #train_loop
     print("======> Starting to train")
     
-    #TODO: add autograd profiler for the training: false to speed up the training
+    # with run:
+    #     print("==> Reporting Argparse params")
+    #     for arg in vars(args):
+    #         wandb.config.update({arg: getattr(args, arg)})
+    #         print(arg, getattr(args, arg))
+        
+    #     #for speedup
+    #     with torch.autograd.profiler.profile(enabled=False):
+    #         with torch.autograd.profiler.emit_nvtx(enabled=False, record_shapes=False):
     
-    #init best measure before the start of the training
+
     best_fmeasure = 0.0
 
     for epoch in tqdm(range(cfg.epochs)):
@@ -362,11 +442,11 @@ if __name__ == "__main__":
             # print(cls_score_pred.round())
             phi_pred = out_pathway2[:,3:,...] 
 
-            loss1 = discriminative_loss(out1["embed_out"], batch["gt_lane_cls"],cfg)
+            loss1 = discriminative_loss(p(out1["embed_out"]), batch["gt_lane_cls"],cfg)
             loss2 = classification_regression_loss(L1loss, BCEloss, CEloss, rho_pred, batch["gt_rho"], delta_z_pred, batch["gt_delta_z"], cls_score_pred, batch["gt_cls_score"], phi_pred, batch["gt_phi"])
             
-            # print("==>discriminative loss::", loss1.item())
-            # print("==>classification loss::", loss2.item())
+            print("==>discriminative loss::", loss1.item())
+            print("==>classification loss::", loss2.item())
             overall_loss = cfg.w_clustering_Loss * loss1 + cfg.w_classification_Loss * loss2
             print("==>overall loss::", overall_loss.item())
             overall_loss.backward()
@@ -374,7 +454,7 @@ if __name__ == "__main__":
 
             batch_loss = overall_loss.detach().cpu() / cfg.batch_size
 
-            #reporting model fps
+            # reporting model fps
             # fps = cfg.batch_size / (time.time() - start_po
 
             tr_loss += batch_loss
@@ -385,7 +465,11 @@ if __name__ == "__main__":
                 print(f"Epoch: {epoch+1}/{cfg.epochs}. Done {itr+1} steps of ~{train_loader_len}. Running Loss:{running_loss:.4f}")
                 # pprint(timings)
 
-                #TODO: log results on wandb
+                wandb.log({'epoch': epoch, 
+                        'train_loss':running_loss,
+                        'lr': scheduler.optimizer.param_groups[0]['lr'],
+                        **{f'time_{k}': v['time'] / v['count'] for k, v in timings.items()}
+                        }, commit=True)
 
                 tr_loss  = 0.0
             
@@ -438,7 +522,7 @@ if __name__ == "__main__":
                             val_cls_score_pred = val_out_pathway2[:,2,...]
                             val_phi_pred = val_out_pathway2[:,3:,...]
 
-                            val_loss1 = discriminative_loss(val_out1["embed_out"], val_batch["gt_lane_cls"],cfg)
+                            val_loss1 = discriminative_loss(p(val_out1["embed_out"]), val_batch["gt_lane_cls"],cfg)
                             val_loss2 = classification_regression_loss(L1loss, BCEloss, CEloss, val_rho_pred, val_batch["gt_rho"], val_delta_z_pred, val_batch["gt_delta_z"], val_cls_score_pred, val_batch["gt_cls_score"], val_phi_pred, val_batch["gt_phi"])
                         
                             val_overall_loss = cfg.w_clustering_Loss * val_loss1 + cfg.w_classification_Loss * val_loss2
@@ -533,6 +617,7 @@ if __name__ == "__main__":
                         torch.save(model3d.state_dict(), checkpoint_save_path)
 
             if should_run_vis:
+                
                 
                 print(">>>>>>>Visualizing<<<<<<<<")
                 vis = Visualization(cfg.org_h, cfg.org_w, cfg.resize_h, cfg.resize_w, cfg.K, cfg.ipm_w, cfg.ipm_h, cfg.crop_y, cfg.top_view_region)
