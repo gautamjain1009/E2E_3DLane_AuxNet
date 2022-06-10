@@ -294,8 +294,11 @@ if __name__ == "__main__":
     print("======> Starting to train")
     
     #TODO: add autograd profiler for the training: false to speed up the training
-    for epoch in tqdm(range(cfg.epochs)):
+    
+    #init best measure before the start of the training
+    best_fmeasure = 0.0
 
+    for epoch in tqdm(range(cfg.epochs)):
         batch_loss = 0.0 
         tr_loss = 0.0 
         start_point = time.time()
@@ -507,11 +510,28 @@ if __name__ == "__main__":
                         scheduler2.step(val_avg_loss.item())
                         
                     eval_stats = evaluator.bench_one_submit(lane_pred_file, gt_file_path)
-                    print("========>>> EVAL STATS:", eval_stats)
                     
-                    """
-                    TODO: on the bassis of the eval stats, create a model checkpoint
-                    """
+                    print("===> Evaluation on validation set: \n"
+                    "laneline F-measure {:.8} \n"
+                    "laneline Recall  {:.8} \n"
+                    "laneline Precision  {:.8} \n"
+                    "laneline x error (close)  {:.8} m\n"
+                    "laneline x error (far)  {:.8} m\n"
+                    "laneline z error (close)  {:.8} m\n"
+                    "laneline z error (far)  {:.8} m\n\n"
+                    .format(eval_stats[0], eval_stats[1], eval_stats[2], eval_stats[3],
+                            eval_stats[4], eval_stats[5], eval_stats[6], eval_stats[7]))
+
+                    #save the best model
+                    if eval_stats[0] > best_fmeasure:
+                        best_fmeasure = eval_stats[0]
+
+                        #TODO: alter this model checkpointing: Trained e2e
+                        print(">>>>>>> Creating model Checkpoint <<<<<<<")
+                        checkpoint_file_name = cfg.train_run_name + args.data_split + str(val_avg_loss.item()) + "epoch_" + str(epoch+1) + ".pth"
+                        checkpoint_save_path = os.path.join(checkpoints_dir, checkpoint_file_name)
+                        torch.save(model3d.state_dict(), checkpoint_save_path)
+
             if should_run_vis:
                 
                 print(">>>>>>>Visualizing<<<<<<<<")
