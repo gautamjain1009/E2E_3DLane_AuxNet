@@ -385,7 +385,11 @@ if __name__ == "__main__":
                 print(f"Epoch: {epoch+1}/{cfg.epochs}. Done {itr+1} steps of ~{train_loader_len}. Running Loss:{running_loss:.4f}")
                 # pprint(timings)
 
-                #TODO: log results on wandb
+                wandb.log({'epoch': epoch, 
+                        'train_loss':running_loss,
+                        'lr': scheduler2.optimizer.param_groups[0]['lr'],
+                        **{f'time_{k}': v['time'] / v['count'] for k, v in timings.items()}
+                        }, commit=True)
 
                 tr_loss  = 0.0
             
@@ -404,6 +408,7 @@ if __name__ == "__main__":
                 
                 with torch.no_grad():
                     with open(lane_pred_file, 'w') as jsonFile:
+                        
                         for val_itr, val_data in enumerate(val_loader):
                             val_batch = {}
                             val_batch.update({"input_image":val_data[0].to(device),
@@ -506,7 +511,7 @@ if __name__ == "__main__":
                         val_avg_loss = val_loss / (val_itr +1)
                         print(f"Validation Loss: {val_avg_loss}")
                         
-                        #TODO: add a condition for e2e if train whole model
+                        wandb.log({'Validation_loss': val_avg_loss,}, commit=False)
                         scheduler2.step(val_avg_loss.item())
                         
                     eval_stats = evaluator.bench_one_submit(lane_pred_file, gt_file_path)
@@ -639,13 +644,13 @@ if __name__ == "__main__":
                             gt_numpy_fig = mplfig_to_npimage(gt_fig)
                             pred_numpy_fig = mplfig_to_npimage(pred_fig)
 
-                            # cv2.imwrite("ipm_test.jpg",gt_numpy_fig)
-                            # cv2.imwrite("2d_test.jpg",pred_numpy_fig)
-                            
-                            # gt_vis_ipm_images.append(gt_ipm)
-                            # gt_vis_2d_images.append(gt_2d)
-                            #TODO: log these images with wandb
+                            vis_gt_numpy_fig = cv2.cvtColor(gt_numpy_fig, cv2.COLOR_BGR2RGB)
+                            vis_pred_numpy_fig = cv2.cvtColor(pred_numpy_fig, cv2.COLOR_BGR2RGB)
 
+                            wandb.log({"validate Predictions":wandb.Image(vis_pred_numpy_fig)})
+                            wandb.log({"validate GT":wandb.Image(vis_gt_numpy_fig)})
+                            
+                            #TODO: increase the number of visualization images to be displayed and retain the step at per epoch
                             break #visualize only one sample for now per vis iteration
                         break
 
