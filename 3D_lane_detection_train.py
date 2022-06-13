@@ -529,7 +529,7 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
 
         optimizer2.zero_grad(set_to_none= True)
         
-        with Timing(timings, "forward_pass"):
+        with Timing(timings, "2d_forward_pass"):
         #forward pass
             o = model2d(batch["input_image"])
             o = o.softmax(dim=1)
@@ -537,6 +537,7 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
             # print("shape of o before max", o.shape)
             o = o[:,1:,:,:]
 
+        with Timing(timings, "3d_forward_pass"):
             out1 = model3d(o)
 
         out_pathway1 = out1["embed_out"]
@@ -585,27 +586,27 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
 
             tr_loss  = 0.0
         
-        # # eval loop
-        # if should_run_valid:
-        #     with Timing(timings, "validate loop"):
-        #         eval_stats, val_avg_loss = validate(model2d, model3d, val_loader, cfg, p, device) 
+        # eval loop
+        if should_run_valid:
+            with Timing(timings, "validate loop"):
+                eval_stats, val_avg_loss = validate(model2d, model3d, val_loader, cfg, p, device) 
 
-        #             #save the best model
-        #         if eval_stats[0] > best_fmeasure:
-        #             best_fmeasure = eval_stats[0]
+                    #save the best model
+                if eval_stats[0] > best_fmeasure:
+                    best_fmeasure = eval_stats[0]
 
-        #             #TODO: alter this model checkpointing: Trained e2e
-        #             print(">>>>>>> Creating model Checkpoint <<<<<<<")
-        #             checkpoint_file_name = cfg.train_run_name + args.data_split + str(val_avg_loss.item()) + "epoch_" + str(epoch+1) + ".pth"
-        #             checkpoint_save_path = os.path.join(checkpoints_dir, checkpoint_file_name)
-        #             torch.save(model3d.state_dict(), checkpoint_save_path)
+                    #TODO: alter this model checkpointing: Trained e2e
+                    print(">>>>>>> Creating model Checkpoint <<<<<<<")
+                    checkpoint_file_name = cfg.train_run_name + args.data_split + str(val_avg_loss.item()) + "epoch_" + str(epoch+1) + ".pth"
+                    checkpoint_save_path = os.path.join(checkpoints_dir, checkpoint_file_name)
+                    torch.save(model3d.state_dict(), checkpoint_save_path)
 
-        #         wandb.log({'Validation_loss': val_avg_loss,}, commit=False)
-        #         scheduler2.step(val_avg_loss.item())                
+                wandb.log({'Validation_loss': val_avg_loss,}, commit=False)
+                scheduler2.step(val_avg_loss.item())                
 
-        # if should_run_vis:
-        #     with Timing(timings, "visualize predictions and ground truth"):
-        #         visualization(cfg, model2d, model3d, val_loader, p, device)
+        if should_run_vis:
+            with Timing(timings, "visualize predictions and ground truth"):
+                visualization(cfg, model2d, model3d, val_loader, p, device)
 
     #reporting epoch train time 
     print(f"Epoch {epoch+1} done! Took {pprint_seconds(time.time()- start_point)}")
@@ -764,7 +765,7 @@ if __name__ == "__main__":
                 else: 
                     torch.save(model2d.state_dict(), train_2d_model_save_path)
                     torch.save(model3d.state_dict(), train_3d_model_save_path)
-                    print("==> Saved the trained models to:", train_2d_model_save_path, train_3d_model_save_path)`
+                    print("==> Saved the trained models to:", train_2d_model_save_path, train_3d_model_save_path)
                 print("==>Training Finished")
                     
                     

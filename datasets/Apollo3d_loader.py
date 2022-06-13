@@ -501,7 +501,7 @@ class Apollo3d_loader(Dataset):
         batch.update({'gt_delta_z':torch.from_numpy(norm_gt_delta_z)})
         
         #convert the image to tensor
-        ##TODO: check the effect on accuracy BGR2RGB
+        img = img.transpose(2, 0, 1) #(BGR -> RGB)
         img = transforms.ToTensor()(img)
         
         img = transforms.Normalize(mean= self.cfg.img_mean, std=self.cfg.img_std)(img)

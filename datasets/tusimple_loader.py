@@ -136,6 +136,7 @@ class TusimpleLoader(Dataset):
         img = cv2.imread(sample['img_path'])
     
         img = img[self.cfg.cut_height:, :, :]
+        img = img.transpose(2, 0, 1) # (BRG --> RGB)
         batch.update({'img':img})
 
         if self.split =="train" or "trainval":
