@@ -201,7 +201,7 @@ def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, 
         with Timing(timings, "optimizer step"):
             optimizer.step()
         
-        batch_loss = seg_loss.detach().cpu() * cfg.batch_size
+        batch_loss = seg_loss.detach().cpu() / cfg.batch_size
         train_batch_time= multitimings.end('train_batch')
         
         #reporting model FPS

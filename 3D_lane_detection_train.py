@@ -456,9 +456,6 @@ def validate(model2d, model3d, val_loader, cfg, p, devoce):
             val_avg_loss = val_loss / (val_itr +1)
             print(f"Validation Loss: {val_avg_loss}")
             
-            wandb.log({'Validation_loss': val_avg_loss,}, commit=False)
-            scheduler2.step(val_avg_loss.item())
-        
         #evaluating the predictions
         eval_stats = evaluator.bench_one_submit(lane_pred_file, gt_file_path)
         
@@ -485,6 +482,7 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
 
     timings = dict()
     multitimings = MultiTiming(timings)
+    multitimings.start('batch_load')
 
     for itr, data in enumerate(train_loader):
 
@@ -494,26 +492,33 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
         else: 
             model2d.train()
             model3d.train()
-            
+
+        batch_load_time = multitimings.end('batch_load')
+        print(f"Got new batch: {batch_load_time:.2f}s - training iteration: {itr}")
+
         #flag for train log and validation loop
         ## TODO: change it to per epoch not iteration
         should_log_train = (itr+1) % cfg.train_log_frequency == 0 
         should_run_valid = (itr+1) % cfg.val_frequency == 0
         should_run_vis = (itr+1) % cfg.val_frequency == 0
-        
+
+        multitimings.start('train_batch')
+
         #get the data
         batch = {}
-        batch.update({"input_image":data[0].to(device),
-                    "aug_mat":data[1].to(device).float(),
-                    "gt_height":data[2].to(device),
-                    "gt_pitch":data[3].to(device),
-                    "gt_lane_points":data[4],
-                    "gt_rho":data[5].to(device),
-                    "gt_phi":data[6].to(device).float(),
-                    "gt_cls_score":data[7].to(device),
-                    "gt_lane_cls":data[8].to(device),
-                    "gt_delta_z":data[9].to(device)
-                    })
+
+        with Timing(timings, "inputs_to_GPU"):
+            batch.update({"input_image":data[0].to(device),
+                        "aug_mat":data[1].to(device).float(),
+                        "gt_height":data[2].to(device),
+                        "gt_pitch":data[3].to(device),
+                        "gt_lane_points":data[4],
+                        "gt_rho":data[5].to(device),
+                        "gt_phi":data[6].to(device).float(),
+                        "gt_cls_score":data[7].to(device),
+                        "gt_lane_cls":data[8].to(device),
+                        "gt_delta_z":data[9].to(device)
+                        })
 
         #TODO: add the condition for camera fix
         #update projection
@@ -523,15 +528,16 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
         model3d.update_projection_for_data_aug(batch["aug_mat"])
 
         optimizer2.zero_grad(set_to_none= True)
-
+        
+        with Timing(timings, "forward_pass"):
         #forward pass
-        o = model2d(batch["input_image"])
-        o = o.softmax(dim=1)
-        o = o/torch.max(torch.max(o, dim=2, keepdim=True)[0], dim=3, keepdim=True)[0] 
-        # print("shape of o before max", o.shape)
-        o = o[:,1:,:,:]
+            o = model2d(batch["input_image"])
+            o = o.softmax(dim=1)
+            o = o/torch.max(torch.max(o, dim=2, keepdim=True)[0], dim=3, keepdim=True)[0] 
+            # print("shape of o before max", o.shape)
+            o = o[:,1:,:,:]
 
-        out1 = model3d(o)
+            out1 = model3d(o)
 
         out_pathway1 = out1["embed_out"]
         out_pathway2 = out1["bev_out"]
@@ -542,20 +548,26 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
         # print(cls_score_pred.round())
         phi_pred = out_pathway2[:,3:,...] 
 
-        loss1 = discriminative_loss(p(out1["embed_out"]), batch["gt_lane_cls"],cfg)
-        loss2 = classification_regression_loss(L1loss, BCEloss, CEloss, rho_pred, batch["gt_rho"], delta_z_pred, batch["gt_delta_z"], cls_score_pred, batch["gt_cls_score"], phi_pred, batch["gt_phi"])
+        with Timing(timings, "3d_Lane_loss_calculation"):
+            loss1 = discriminative_loss(p(out1["embed_out"]), batch["gt_lane_cls"],cfg)
+            loss2 = classification_regression_loss(L1loss, BCEloss, CEloss, rho_pred, batch["gt_rho"], delta_z_pred, batch["gt_delta_z"], cls_score_pred, batch["gt_cls_score"], phi_pred, batch["gt_phi"])
+
+            # print("==>discriminative loss::", loss1.item())
+            # print("==>classification loss::", loss2.item())
+            overall_loss = cfg.w_clustering_Loss * loss1 + cfg.w_classification_Loss * loss2
+            print("==>overall loss::", overall_loss.item())
+        with Timing(timings, "backward_pass"):        
+            overall_loss.backward()
         
-        # print("==>discriminative loss::", loss1.item())
-        # print("==>classification loss::", loss2.item())
-        overall_loss = cfg.w_clustering_Loss * loss1 + cfg.w_classification_Loss * loss2
-        print("==>overall loss::", overall_loss.item())
-        overall_loss.backward()
-        optimizer2.step()
+        with Timing(timings,  "optimizer_step"): 
+            optimizer2.step()
 
         batch_loss = overall_loss.detach().cpu() / cfg.batch_size
+        train_batch_time= multitimings.end('train_batch')
 
         #reporting model fps
-        # fps = cfg.batch_size / (time.time() - start_po
+        fps = cfg.batch_size / train_batch_time
+        print(f"> Batch trained: {train_batch_time:.2f}s (FPS={fps:.2f}).")
 
         tr_loss += batch_loss
 
@@ -563,7 +575,7 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
 
             running_loss = tr_loss.item() / cfg.train_log_frequency
             print(f"Epoch: {epoch+1}/{cfg.epochs}. Done {itr+1} steps of ~{train_loader_len}. Running Loss:{running_loss:.4f}")
-            # pprint(timings)
+            pprint_stats(timings)
 
             wandb.log({'epoch': epoch, 
                     'train_loss':running_loss,
@@ -573,23 +585,31 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
 
             tr_loss  = 0.0
         
-        # eval loop
-        if should_run_valid:
+        # # eval loop
+        # if should_run_valid:
+        #     with Timing(timings, "validate loop"):
+        #         eval_stats, val_avg_loss = validate(model2d, model3d, val_loader, cfg, p, device) 
 
-            eval_stats, val_avg_loss = validate(model2d, model3d, val_loader, cfg, p, device) 
+        #             #save the best model
+        #         if eval_stats[0] > best_fmeasure:
+        #             best_fmeasure = eval_stats[0]
 
-                #save the best model
-            if eval_stats[0] > best_fmeasure:
-                best_fmeasure = eval_stats[0]
+        #             #TODO: alter this model checkpointing: Trained e2e
+        #             print(">>>>>>> Creating model Checkpoint <<<<<<<")
+        #             checkpoint_file_name = cfg.train_run_name + args.data_split + str(val_avg_loss.item()) + "epoch_" + str(epoch+1) + ".pth"
+        #             checkpoint_save_path = os.path.join(checkpoints_dir, checkpoint_file_name)
+        #             torch.save(model3d.state_dict(), checkpoint_save_path)
 
-                #TODO: alter this model checkpointing: Trained e2e
-                print(">>>>>>> Creating model Checkpoint <<<<<<<")
-                checkpoint_file_name = cfg.train_run_name + args.data_split + str(val_avg_loss.item()) + "epoch_" + str(epoch+1) + ".pth"
-                checkpoint_save_path = os.path.join(checkpoints_dir, checkpoint_file_name)
-                torch.save(model3d.state_dict(), checkpoint_save_path)
+        #         wandb.log({'Validation_loss': val_avg_loss,}, commit=False)
+        #         scheduler2.step(val_avg_loss.item())                
 
-        if should_run_vis:
-            visualization(cfg, model2d, model3d, val_loader, p, device)
+        # if should_run_vis:
+        #     with Timing(timings, "visualize predictions and ground truth"):
+        #         visualization(cfg, model2d, model3d, val_loader, p, device)
+
+    #reporting epoch train time 
+    print(f"Epoch {epoch+1} done! Took {pprint_seconds(time.time()- start_point)}")
+
 if __name__ == "__main__":
     cuda = torch.cuda.is_available()
     if cuda:
@@ -734,7 +754,18 @@ if __name__ == "__main__":
                         train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, scheduler2, L1loss, BCEloss, CEloss, m, p, device)
                     else:
                         train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, scheduler2, L1loss, BCEloss, CEloss, m, p, device, optimizer1, scheduler1)
-                   
+                
+                train_2d_model_save_path = os.path.join(result_model_dir, cfg.train_run_name + "2d.pth")
+                train_3d_model_save_path = os.path.join(result_model_dir, cfg.train_run_name + "3d.pth")
+
+                if args.pretrained2d == True:
+                    torch.save(model3d.state_dict(), train_3d_model_save_path)
+                    print("=> Saving 3d model to", train_3d_model_save_path)
+                else: 
+                    torch.save(model2d.state_dict(), train_2d_model_save_path)
+                    torch.save(model3d.state_dict(), train_3d_model_save_path)
+                    print("==> Saved the trained models to:", train_2d_model_save_path, train_3d_model_save_path)`
+                print("==>Training Finished")
                     
                     
                     
