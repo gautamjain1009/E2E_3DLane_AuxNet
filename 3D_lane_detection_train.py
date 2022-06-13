@@ -472,9 +472,8 @@ def validate(model2d, model3d, val_loader, cfg, p, devoce):
 
     return eval_stats, val_avg_loss 
 
-def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, scheduler2, L1loss, BCEloss, CEloss, m, p, device,  optimizer1 = None, scheduler1 = None):
+def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, scheduler2, L1loss, BCEloss, CEloss, m, p, device,  best_fmeasure, optimizer1 = None, scheduler1 = None):
      #init best measure before the start of the training
-    best_fmeasure = 0.0
     
     batch_loss = 0.0 
     tr_loss = 0.0 
@@ -611,7 +610,8 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
 
     #reporting epoch train time 
     print(f"Epoch {epoch+1} done! Took {pprint_seconds(time.time()- start_point)}")
-
+    return best_fmeasure
+    
 if __name__ == "__main__":
     cuda = torch.cuda.is_available()
     if cuda:
@@ -736,6 +736,7 @@ if __name__ == "__main__":
         print("===> Using pretrained 3d model") 
     
     #train_loop
+    best_fmeasure = 0.0
     print("======> Starting to train")
     with run:
         print("==> Reporting Argparse params to wandb")
@@ -753,10 +754,11 @@ if __name__ == "__main__":
                 for epoch in tqdm(range(cfg.epochs)):
 
                     if args.pretrained2d == True:
-                        train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, scheduler2, L1loss, BCEloss, CEloss, m, p, device)
+                        M = train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, scheduler2, L1loss, BCEloss, CEloss, m, p, device, best_fmeasure)
                     else:
-                        train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, scheduler2, L1loss, BCEloss, CEloss, m, p, device, optimizer1, scheduler1)
-                
+                        M = train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, scheduler2, L1loss, BCEloss, CEloss, m, p, device, optimizer1, scheduler1, best_fmeasure)
+
+                        best_fmeasure = M
                 train_2d_model_save_path = os.path.join(result_model_dir, cfg.train_run_name + "2d.pth")
                 train_3d_model_save_path = os.path.join(result_model_dir, cfg.train_run_name + "3d.pth")
 
