@@ -152,6 +152,32 @@ class Anchorless3DLanedetector(nn.Module):
                 in_channels = v[0]
         return nn.Sequential(*layers)
 
+    def forward(self,x):
+        output = {} 
+
+        cam_height = self.cam_height
+        cam_pitch = self.cam_pitch
+        
+        #spatial transfer features image to ipm
+        grid = self.projective_layer(self.M_inv)
+        
+        # print("checking the shape of grid", grid.shape)
+        # print("checking the shape of the input", x.shape)
+
+        x_proj = F.grid_sample(x, grid)
+        # print("x_proj.shape: ", x_proj.shape)
+
+        embedding_features = self.embedding(x_proj)
+        # print("check the size of the embedding_features: ", embedding_features.shape)
+
+        # Extract the features from the BEV projected grid
+        bev_features = self.bev_encoder(x_proj)
+        # print("checking the tensor shaoe ater bev_encoder: ", bev_features.shape)
+        
+        output.update({"embed_out": embedding_features, "bev_out": bev_features})
+
+        return output
+
     def update_projection(self, cfg, cam_height, cam_pitch):
         print("updating the projection matrix with gt cam_height and cam_pitch")
         """
@@ -186,31 +212,6 @@ class Anchorless3DLanedetector(nn.Module):
             aug_mats[i] = torch.matmul(torch.matmul(self.S_im_inv, aug_mats[i]), self.S_im)
             self.M_inv[i] = torch.matmul(aug_mats[i], self.M_inv[i])
 
-    def forward(self,x):
-        output = {} 
-
-        cam_height = self.cam_height
-        cam_pitch = self.cam_pitch
-        
-        #spatial transfer features image to ipm
-        grid = self.projective_layer(self.M_inv)
-        
-        # print("checking the shape of grid", grid.shape)
-        # print("checking the shape of the input", x.shape)
-
-        x_proj = F.grid_sample(x, grid)
-        # print("x_proj.shape: ", x_proj.shape)
-
-        embedding_features = self.embedding(x_proj)
-        # print("check the size of the embedding_features: ", embedding_features.shape)
-
-        # Extract the features from the BEV projected grid
-        bev_features = self.bev_encoder(x_proj)
-        # print("checking the tensor shaoe ater bev_encoder: ", bev_features.shape)
-        
-        output.update({"embed_out": embedding_features, "bev_out": bev_features})
-
-        return output
 
 def load_3d_model(cfg, device, pretrained = False):
     

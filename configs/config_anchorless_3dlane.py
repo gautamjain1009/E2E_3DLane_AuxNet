@@ -133,7 +133,7 @@ train_log_frequency = 200
 
 # #Hyperparams
 epochs = 100
-batch_size = 2
+batch_size = 1
 num_workers = 3
 l2_lambda = 1e-4
 log_frequency_steps = 200

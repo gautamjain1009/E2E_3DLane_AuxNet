@@ -250,7 +250,7 @@ def visualization(cfg, model2d, model3d, val_loader, p, device):
             #update projection
             model3d.update_projection(cfg, vis_batch["gt_height"], vis_batch["gt_pitch"])
             
-            vis_o = model2d(vis_batch["input_image"])
+            vis_o = model2d(vis_batch["input_image"].contiguous().float())
             vis_o = vis_o.softmax(dim=1)
             vis_o = vis_o/torch.max(torch.max(vis_o, dim=2, keepdim=True)[0], dim=3, keepdim=True)[0] 
             # print("shape of o before max", o.shape)
@@ -372,7 +372,7 @@ def validate(model2d, model3d, val_loader, cfg, p, devoce):
                 #update projection
                 model3d.update_projection(cfg, val_batch["gt_height"], val_batch["gt_pitch"])
                 
-                val_o = model2d(val_batch["input_image"])                
+                val_o = model2d(val_batch["input_image"].contiguous().float())                
                 val_o = val_o.softmax(dim=1)
                 val_o = val_o/torch.max(torch.max(val_o, dim=2, keepdim=True)[0], dim=3, keepdim=True)[0] 
                 # print("shape of o before max", o.shape)
@@ -487,10 +487,11 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
     for itr, data in enumerate(train_loader):
 
         if args.e2e == True:
+            #TOOD: solve this issue of missing outs when both are .train()
             model2d.train()
             model3d.train()
-        else: 
-            model2d.train()
+        else:
+            model2d.train() 
             model3d.train()
 
         batch_load_time = multitimings.end('batch_load')
@@ -530,8 +531,8 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
         optimizer2.zero_grad(set_to_none= True)
         
         with Timing(timings, "2d_forward_pass"):
-        #forward pass
-            o = model2d(batch["input_image"])
+            #forward pass
+            o = model2d(batch["input_image"].contiguous().float())
             o = o.softmax(dim=1)
             o = o/torch.max(torch.max(o, dim=2, keepdim=True)[0], dim=3, keepdim=True)[0] 
             # print("shape of o before max", o.shape)
