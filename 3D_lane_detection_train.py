@@ -298,7 +298,7 @@ def visualization(cfg, model2d, model3d, val_loader, p, device):
                 #Cluster the tile embedding as per lane class
                 # return the tile labels: 0 marked as no lane
                 clustered_tiles = embedding_post_process(vis_embedding_b, vis_cls_score_pred_b) 
-                print("check if the num of lanes::",np.unique(clustered_tiles))
+                # print("check if the num of lanes::",np.unique(clustered_tiles))
                 
                 #extract points from predictions
                 points = [] ## ---> [[points lane1 (lists)], [points lane2(lists))], ...]
@@ -770,22 +770,3 @@ if __name__ == "__main__":
                     torch.save(model3d.state_dict(), train_3d_model_save_path)
                     print("==> Saved the trained models to:", train_2d_model_save_path, train_3d_model_save_path)
                 print("==>Training Finished")
-                    
-                    
-                    
-                    
-                    
-                    
-
-
-
-
-
-
-
-
-
-
-
-
-
