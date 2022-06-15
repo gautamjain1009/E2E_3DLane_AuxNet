@@ -148,9 +148,7 @@ def validate(model, device, data_loader, loss_f, cfg):
     return val_avg_loss, val_pred, val_data_IOU
    
 
-def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, cfg, criterion):
-    metric = 0
-    Iou = 0.0
+def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, cfg, criterion, metric ,Iou):
     batch_loss = 0.0
     tr_loss = 0.0
     start_point = time.time()
@@ -201,7 +199,7 @@ def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, 
         with Timing(timings, "optimizer step"):
             optimizer.step()
         
-        batch_loss = seg_loss.detach().cpu() * cfg.batch_size
+        batch_loss = seg_loss.detach().cpu() / cfg.batch_size
         train_batch_time= multitimings.end('train_batch')
         
         #reporting model FPS
@@ -272,6 +270,7 @@ def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, 
 
     #reporting epoch train time 
     print(f"Epoch {epoch+1} done! Took {pprint_seconds(time.time()- start_point)}")
+    return metric, Iou
 
 if __name__ == "__main__":
 
@@ -350,6 +349,9 @@ if __name__ == "__main__":
                                                         threshold= cfg.lrs_thresh, verbose=True, min_lr= cfg.lrs_min,
                                                         cooldown=cfg.lrs_cd)                               
     
+    #initialize the values of metrics for model checkpointting
+    metric = 0
+    Iou = 0.0
     with run:
         print("==> Reporting Argparse params")
         for arg in vars(args):
@@ -360,8 +362,11 @@ if __name__ == "__main__":
         with torch.autograd.profiler.profile(enabled=False):
             with torch.autograd.profiler.emit_nvtx(enabled=False, record_shapes=False):
                 for epoch in tqdm(range(cfg.epochs)):                    
-                    train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, cfg, criterion)
-    
+                    M, I = train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, cfg, criterion, metric, Iou)
+
+                    metric = M 
+                    Iou = I
+
                 train_model_savepath = os.path.join(result_model_dir, cfg.train_run_name + ".pth")
                 torch.save(model.state_dict(), train_model_savepath)
                 print("Saved the train model")
