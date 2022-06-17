@@ -1,5 +1,3 @@
-from multiprocessing import dummy
-from operator import gt
 import sys
 sys.path.append("../")
 import torch 
@@ -8,8 +6,6 @@ import cv2
 import os 
 import torchvision.transforms as transforms
 from torch.utils.data import Dataset, DataLoader
-import logging 
-logging.basicConfig(level = logging.DEBUG)
 import json 
 from utils.helper_functions import *
 import matplotlib.pyplot as plt

@@ -23,6 +23,8 @@ from models.build_model import load_model
 from utils.helper_functions import *
 from anchorless_detector import load_3d_model
 from evaluate import Apollo_3d_eval
+import gc
+
 
 def classification_regression_loss(L1loss, BCEloss, CEloss, rho_pred, rho_gt, delta_z_pred, delta_z_gt, cls_pred, cls_gt, phi_pred, phi_gt ):
         """"
@@ -234,8 +236,8 @@ def visualization(cfg, model2d, model3d, val_loader, p, device):
     print(">>>>>>>Visualizing<<<<<<<<")
     vis = Visualization(cfg.org_h, cfg.org_w, cfg.resize_h, cfg.resize_w, cfg.K, cfg.ipm_w, cfg.ipm_h, cfg.crop_y, cfg.top_view_region)
     
-    model2d.train()
-    model3d.train()
+    model2d.eval()
+    model3d.eval()
     with torch.no_grad():
         for vis_itr, vis_data in enumerate(val_loader):
             vis_batch = {}
@@ -322,11 +324,7 @@ def visualization(cfg, model2d, model3d, val_loader, p, device):
                 gt_fig = vis.draw_lanes(vis_batch["gt_lane_points"][b], vis_img, vis_batch["vis_gt_height"][b], vis_batch["vis_gt_pitch"][b])         
                 
                 pred_fig = vis.draw_lanes(points, vis_img, vis_batch["vis_gt_height"][b], vis_batch["vis_gt_pitch"][b])
-                
-                # plt.savefig("train_vis.png")
-                # print("Done dona done")
-                # obtain the similar thing for the predicted lane points
-                
+            
                 gt_numpy_fig = mplfig_to_npimage(gt_fig)
                 pred_numpy_fig = mplfig_to_npimage(pred_fig)
 
@@ -336,15 +334,18 @@ def visualization(cfg, model2d, model3d, val_loader, p, device):
                 wandb.log({"validate Predictions":wandb.Image(vis_pred_numpy_fig)})
                 wandb.log({"validate GT":wandb.Image(vis_gt_numpy_fig)})
                 
+                del vis_gt_numpy_fig
+                del vis_pred_numpy_fig
+
+                gc.collect()
                 #TODO: increase the number of visualization images to be displayed and retain the step at per epoch
                 break #visualize only one sample for now per vis iteration
             break
 
 def validate(model2d, model3d, val_loader, cfg, p, devoce):
-    #TODO: check this issue of missing outputs in .eval()
-    # model3d.eval()
-    model2d.train()
-    model3d.train()
+    
+    model2d.eval()
+    model3d.eval()
     
     print(">>>>>>>Validating<<<<<<<<")
     val_loss = 0.0
@@ -372,7 +373,7 @@ def validate(model2d, model3d, val_loader, cfg, p, devoce):
                 #update projection
                 model3d.update_projection(cfg, val_batch["gt_height"], val_batch["gt_pitch"])
                 
-                val_o = model2d(val_batch["input_image"].contiguous().float())                
+                val_o = model2d(val_batch["input_image"].contiguous().float())
                 val_o = val_o.softmax(dim=1)
                 val_o = val_o/torch.max(torch.max(val_o, dim=2, keepdim=True)[0], dim=3, keepdim=True)[0] 
                 # print("shape of o before max", o.shape)
@@ -483,16 +484,15 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
     multitimings = MultiTiming(timings)
     multitimings.start('batch_load')
 
+    if args.e2e == True:
+        #TOOD: solve this issue of missing outs when both are .train()
+        model2d.train()
+        model3d.train()
+    else:
+        model2d.eval() 
+        model3d.train()
+
     for itr, data in enumerate(train_loader):
-
-        if args.e2e == True:
-            #TOOD: solve this issue of missing outs when both are .train()
-            model2d.train()
-            model3d.train()
-        else:
-            model2d.train() 
-            model3d.train()
-
         batch_load_time = multitimings.end('batch_load')
         print(f"Got new batch: {batch_load_time:.2f}s - training iteration: {itr}")
 
@@ -604,9 +604,14 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
                 wandb.log({'Validation_loss': val_avg_loss,}, commit=False)
                 scheduler2.step(val_avg_loss.item())                
 
+        #vis loop
         if should_run_vis:
             with Timing(timings, "visualize predictions and ground truth"):
                 visualization(cfg, model2d, model3d, val_loader, p, device)
+
+        #TODO: add the condition for e2e
+        model2d.eval()
+        model3d.train()
 
     #reporting epoch train time 
     print(f"Epoch {epoch+1} done! Took {pprint_seconds(time.time()- start_point)}")

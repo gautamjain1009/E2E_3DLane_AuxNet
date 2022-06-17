@@ -45,7 +45,7 @@ aggregator = dict(type= "SCNN")
 
 heads = dict(type = 'PlainDecoder')
 
-pretrained_2dmodel_path = "/home/gautam/trained_nets/model_itr/r18_scnn_binary_2dLane_b16_6_June_.pth"
+pretrained_2dmodel_path = "/home/gautam/Thesis/E2E_3DLane_AuxNet/nets/checkpoints/r18_nodrop_scnn_binary_2dLane_16_June_0.02068289741873741_9.pth"
 lane_pred_dir = "/home/gautam/Thesis/E2E_3DLane_AuxNet/nets/3dlane_detection"
 
 """
@@ -53,7 +53,7 @@ lane_pred_dir = "/home/gautam/Thesis/E2E_3DLane_AuxNet/nets/3dlane_detection"
 """
 # encode_mode ="overlapping"
 # encode_mode = "1x1non"
-encode_mode = "overlapping"
+encode_mode = "32x32non"
 # encode_mode = "1x1_mix_32X32"
 
 #(channles, K_size, padding, stride)
@@ -131,7 +131,7 @@ May be to process the masks for the section 3.2 I need not multiply the ipm_h an
 # ###logging params
 date_it = "25_March_"
 train_run_name = "Anchorless3DLane" + date_it
-val_frequency = 5
+val_frequency = 200
 train_log_frequency = 200
 
 # #Hyperparams
