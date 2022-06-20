@@ -236,8 +236,8 @@ def visualization(cfg, model2d, model3d, val_loader, p, device):
     print(">>>>>>>Visualizing<<<<<<<<")
     vis = Visualization(cfg.org_h, cfg.org_w, cfg.resize_h, cfg.resize_w, cfg.K, cfg.ipm_w, cfg.ipm_h, cfg.crop_y, cfg.top_view_region)
     
-    model2d.eval()
-    model3d.eval()
+    model2d.train()
+    model3d.train()
     with torch.no_grad():
         for vis_itr, vis_data in enumerate(val_loader):
             vis_batch = {}
@@ -270,7 +270,7 @@ def visualization(cfg, model2d, model3d, val_loader, p, device):
             vis_phi_pred = vis_out_pathway2[:,3:,...] # --> (b,10,13,8) ---> (b,13,8)
             
             #TODO: make a separate function for this part of vis later.
-            for b in range(cfg.batch_size):
+            for b in range(vis_rho_pred.shape[0]):
                 vis_img_path = vis_batch["image_full_path"][b]
                 vis_img = cv2.imread(vis_img_path)
                 
@@ -287,8 +287,8 @@ def visualization(cfg, model2d, model3d, val_loader, p, device):
                 vis_embedding_b = vis_embedding_b.detach().cpu().numpy()
                 vis_embedding_b = np.transpose(vis_embedding_b, (1,2,0)) # (H/tile_size, W/tile_size, 4)
 
-                # print(vis_cls_score_pred_b)
-                vis_cls_score_pred_b = vis_cls_score_pred_b.round() # probs to 0 or 1
+                vis_cls_score_pred_b[vis_cls_score_pred_b  >= cfg.threshold_score] = 1 # probs to 0 or 1
+                vis_cls_score_pred_b[vis_cls_score_pred_b  < cfg.threshold_score] = 0
 
                 #unormalize the rho and delta z
                 vis_rho_pred_b = vis_rho_pred_b * (cfg.max_lateral_offset - cfg.min_lateral_offset) + cfg.min_lateral_offset
@@ -344,8 +344,8 @@ def visualization(cfg, model2d, model3d, val_loader, p, device):
 
 def validate(model2d, model3d, val_loader, cfg, p, devoce):
     
-    model2d.eval()
-    model3d.eval()
+    model2d.train()
+    model3d.train()
     
     print(">>>>>>>Validating<<<<<<<<")
     val_loss = 0.0
@@ -372,7 +372,7 @@ def validate(model2d, model3d, val_loader, cfg, p, devoce):
 
                 #update projection
                 model3d.update_projection(cfg, val_batch["gt_height"], val_batch["gt_pitch"])
-                
+
                 val_o = model2d(val_batch["input_image"].contiguous().float())
                 val_o = val_o.softmax(dim=1)
                 val_o = val_o/torch.max(torch.max(val_o, dim=2, keepdim=True)[0], dim=3, keepdim=True)[0] 
@@ -400,8 +400,8 @@ def validate(model2d, model3d, val_loader, cfg, p, devoce):
                 if (val_itr +1) % 10 == 0:
                     val_running_loss = val_loss.item() / (val_itr + 1)
                     print(f"Validation: {val_itr+1} steps of ~{val_loader_len}.  Validation Running Loss {val_running_loss:.4f}")
-
-                for b in range(cfg.batch_size):
+                
+                for b in range(val_rho_pred.shape[0]):
                     #offset predictions
                     val_rho_pred_b = val_rho_pred[b,:,:].detach().cpu().numpy()
                     val_phi_pred_b = val_phi_pred[b,:,:,:].detach().cpu().numpy()
@@ -416,8 +416,9 @@ def validate(model2d, model3d, val_loader, cfg, p, devoce):
                     val_embedding_b = np.transpose(val_embedding_b, (1,2,0)) # (H/tile_size, W/tile_size, 4)
 
                     # print(vis_cls_score_pred_b)
-                    val_cls_score_pred_b = val_cls_score_pred_b.round() # probs to 0 or 1
-
+                    val_cls_score_pred_b[val_cls_score_pred_b  >= cfg.threshold_score] = 1 # probs to 0 or 1
+                    val_cls_score_pred_b[val_cls_score_pred_b  < cfg.threshold_score] = 0
+                    
                     #unormalize the rho and delta z
                     val_rho_pred_b = val_rho_pred_b * (cfg.max_lateral_offset - cfg.min_lateral_offset) + cfg.min_lateral_offset
                     val_delta_z_pred_b = val_delta_z_pred_b * (cfg.max_delta_z - cfg.min_delta_z) + cfg.min_delta_z
@@ -489,7 +490,7 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
         model2d.train()
         model3d.train()
     else:
-        model2d.eval() 
+        model2d.train()
         model3d.train()
 
     for itr, data in enumerate(train_loader):
@@ -500,7 +501,7 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
         ## TODO: change it to per epoch not iteration
         should_log_train = (itr+1) % cfg.train_log_frequency == 0 
         should_run_valid = (itr+1) % cfg.val_frequency == 0
-        should_run_vis = (itr+1) % cfg.val_frequency == 0
+        should_run_vis = (itr+1) % cfg.vis_frequency == 0
 
         multitimings.start('train_batch')
 
@@ -531,7 +532,7 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
         
         with Timing(timings, "2d_forward_pass"):
             #forward pass
-            o = model2d(batch["input_image"].contiguous().float())
+            o = model2d(batch["input_image"].contiguous().float())            
             o = o.softmax(dim=1)
             o = o/torch.max(torch.max(o, dim=2, keepdim=True)[0], dim=3, keepdim=True)[0] 
             # print("shape of o before max", o.shape)
@@ -610,7 +611,7 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
                 visualization(cfg, model2d, model3d, val_loader, p, device)
 
         #TODO: add the condition for e2e
-        model2d.eval()
+        model2d.train()
         model3d.train()
 
     #reporting epoch train time 
@@ -636,9 +637,9 @@ if __name__ == "__main__":
     parser.add_argument("--baseline", type=bool, default=False, help="enable baseline")
     parser.add_argument("--pretrained2d", type=bool, default=True, help="enable pretrained 2d lane detection model")
     parser.add_argument("--pretrained3d", type=bool, default=False, help="enable pretrained anchorless 3d lane detection model")
-    parser.add_argument("--data_dir", type=str, default="/home/gautam/e2e/lane_detection/3d_approaches/3d_dataset/Apollo_Sim_3D_Lane_Release", help="data directory")
+    parser.add_argument("--data_dir", type=str, default="/home/ims-robotics/Documents/gautam/dataset/Apollo_Sim_3D_Lane_Release", help="data directory")
     parser.add_argument("--data_split", type=str, default="standard", help="data split")
-    parser.add_argument("--path_data_split", type=str, default="/home/gautam/e2e/lane_detection/3d_approaches/3d_dataset/3D_Lane_Synthetic_Dataset/old_data_splits", help="path to data split")
+    parser.add_argument("--path_data_split", type=str, default="/home/ims-robotics/Documents/gautam/dataset/data_splits", help="path to data split")
     parser.add_argument("--e2e",type=bool, default=False, help="enable end-to-end training")
     
     #parsing args

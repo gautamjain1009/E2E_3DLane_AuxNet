@@ -9,7 +9,7 @@ from torch.utils.data import Dataset, DataLoader
 import json 
 from utils.helper_functions import *
 import matplotlib.pyplot as plt
-
+import time
 
 """
 Import just for unit test
@@ -96,10 +96,16 @@ class Visualization(object):
         flag = False     
         dummy_image = im_ipm.copy()
         
-        fig = plt.figure(figsize=(10, 10))
+        fig = plt.figure(figsize=(15, 15))
         ax1 = fig.add_subplot(131, projection='3d')
         ax2 = fig.add_subplot(132)
         ax3 = fig.add_subplot(133)
+
+        #removing axis lables
+        ax2.set_xticks([])
+        ax2.set_yticks([])
+        ax3.set_xticks([])
+        ax3.set_yticks([])
 
         delta_z_dict = {}
         for i in range(cnt_gt):
@@ -551,28 +557,32 @@ def collate_fn(batch):
                     #0      1                           2                   3                    4             5                 6                 7                 8          9                   10              
 if __name__ == "__main__":
 
-    #unit test for the data loader
-    #TODO: add the hardcoded arguments to config file later on
-    data_root = '/home/gautam/e2e/lane_detection/3d_approaches/3d_dataset/Apollo_Sim_3D_Lane_Release'
-    data_splits = '/home/gautam/e2e/lane_detection/3d_approaches/3d_dataset/3D_Lane_Synthetic_Dataset/old_data_splits/standard'
-    config_path = '/home/gautam/Thesis/E2E_3DLane_AuxNet/configs/config_anchorless_3dlane.py'
+    # #unit test for the data loader
+    # #TODO: add the hardcoded arguments to config file later on
+    # data_root = '/home/ims-robotics/Documents/gautam/dataset/Apollo_Sim_3D_Lane_Release'
+    # data_splits = '/home/ims-robotics/Documents/gautam/dataset/data_splits/standard'
+    # config_path = '/home/ims-robotics/Documents/gautam/E2E_3DLane_AuxNet/configs/config_anchorless_3dlane.py'
     
-    cfgs = Config.fromfile(config_path)
+    # cfgs = Config.fromfile(config_path)
 
-    dataset = Apollo3d_loader(data_root, data_splits, cfg = cfgs, phase = 'test')
-    loader = DataLoader(dataset, batch_size=cfgs.batch_size, shuffle=True, num_workers=cfgs.num_workers, collate_fn=collate_fn)
+    # dataset = Apollo3d_loader(data_root, data_splits, cfg = cfgs, phase = 'train')
+    # loader = DataLoader(dataset, batch_size=cfgs.batch_size, shuffle=True, num_workers=cfgs.num_workers, collate_fn=collate_fn)
 
     # max_list = []
     # min_list = []
 
-    for i, data in enumerate(loader):
-        print("checking the rho",data[5].shape)
-        print("checking the values of idx",data[10])
-    #     # print("checking the detlat",data[9])
-    #     # print("checking if class score",data[7])
-        
+    # start_point = time.time()
+    # for i, data in enumerate(loader):
+    #     batch_time = time.time()
+
+    #     print("time taken to load one batch", batch_time - start_point )
+    #     start_point = batch_time
+
+
+    # #     # print("checking the detlat",data[9])
+    # #     # print("checking if class score",data[7])
+    #     # print(data[9][0])
     #     for j in range(cfgs.batch_size):
-    #         print("checking min and max for iteration:::",i)
     #         # print(data[9][i].shape)
     #         # print(data[9].shape)
     #         max_list.append(data[9][j].max())

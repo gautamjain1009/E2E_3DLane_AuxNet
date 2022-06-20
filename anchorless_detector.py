@@ -188,7 +188,7 @@ class Anchorless3DLanedetector(nn.Module):
         :param cam_pitch:
         :return:
         """
-        for i in range(cfg.batch_size):
+        for i in range(cam_height.shape[0]):
             M, M_inv = homography_im2ipm_norm(cfg.top_view_region, np.array([cfg.org_h, cfg.org_w]),
                                                 cfg.crop_y, np.array([cfg.resize_h, cfg.resize_w]),
                                                 cam_pitch[i].detach().cpu().numpy(), cam_height[i].detach().cpu().numpy(), cfg.K)

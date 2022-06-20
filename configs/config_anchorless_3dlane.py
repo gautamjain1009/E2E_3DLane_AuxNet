@@ -45,8 +45,8 @@ aggregator = dict(type= "SCNN")
 
 heads = dict(type = 'PlainDecoder')
 
-pretrained_2dmodel_path = "/home/gautam/Thesis/E2E_3DLane_AuxNet/nets/checkpoints/r18_nodrop_scnn_binary_2dLane_16_June_0.02068289741873741_9.pth"
-lane_pred_dir = "/home/gautam/Thesis/E2E_3DLane_AuxNet/nets/3dlane_detection"
+pretrained_2dmodel_path = "/home/ims-robotics/Documents/gautam/E2E_3DLane_AuxNet/nets/checkpoints/RGB_b16_r18_scnn_binary_2dLane_16_June_0.007081503048539162_98.pth"
+lane_pred_dir = "/home/ims-robotics/Documents/gautam/E2E_3DLane_AuxNet/nets/3dlane_detection"
 
 """
 3d model params (anchorless) for Apollo SIM3D dataset
@@ -93,7 +93,7 @@ min_lateral_offset = -23
 max_lateral_offset = 23
 
 #TODO: NOTE: need to calculate this value first over the train dataset
-min_delta_z = -1.5
+min_delta_z = -1
 max_delta_z = 1.5
 
 #init camera height and pitch
@@ -106,6 +106,7 @@ K = np.array([[2015., 0., 960.],
                        [0., 0., 1.]])
 
 #TODO: change the top view region as per Genlanenet
+# top_view_region = np.array([[-10, 85], [10, 85], [-10, 5], [10, 5]])
 top_view_region = np.array([[-10, 103], [10, 103], [-10, 3], [10, 3]])
 batch_norm = True #bev encoder
 embedding_dim = 4 
@@ -117,8 +118,8 @@ n_bins = 10
 # Discriminative Loss 
 
 #TODO: Change the values as per the Gen_net paper
-delta_pull = 0.05 ## delta_v 
-delta_push = 1.5 ## delta_d 
+delta_pull = 0.1 ## delta_v 
+delta_push = 3.0 ## delta_d 
 tile_size = 32
 embed_dim = 4
 
@@ -129,17 +130,18 @@ May be to process the masks for the section 3.2 I need not multiply the ipm_h an
 """
 
 # ###logging params
-date_it = "25_March_"
-train_run_name = "Anchorless3DLane" + date_it
-val_frequency = 200
-train_log_frequency = 200
+date_it = "17_June_"
+train_run_name = "Anchorless3DLane_evalISSUE" + date_it
+val_frequency = 4
+vis_frequency = 4
+train_log_frequency = 20
 
 # #Hyperparams
 epochs = 100
-batch_size = 8
-num_workers = 3
+batch_size = 16
+num_workers = 8
 l2_lambda = 1e-4
-log_frequency_steps = 200
+# log_frequency_steps = 200
 lr = 0.001 
 lrs_cd = 0
 lrs_factor = 0.75
@@ -152,7 +154,7 @@ bg_weight = 0.4 #used in the loss function to reduce the importance of one class
 #TODO: try different combination later as per the gradients and in the end try to balance them
 w_clustering_Loss = 0.2
 w_classification_Loss = 0.8
-
+threshold_score = 0.3
 
 """
 NOTE:: NOTE:: NOTE:: NOTE::

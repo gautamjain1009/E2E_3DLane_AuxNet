@@ -19,7 +19,7 @@ class PlainDecoder(nn.Module):
 
     def forward(self, x):
 
-        x = self.dropout(x)
+        # x = self.dropout(x)
         x = self.conv8(x)
 
         ## F.interpolate and nn.Upsample are the same thing for upsampling but both classes are designed
