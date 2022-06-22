@@ -236,7 +236,6 @@ def visualization(cfg, model2d, model3d, val_loader, p, device):
     print(">>>>>>>Visualizing<<<<<<<<")
     vis = Visualization(cfg.org_h, cfg.org_w, cfg.resize_h, cfg.resize_w, cfg.K, cfg.ipm_w, cfg.ipm_h, cfg.crop_y, cfg.top_view_region)
     
-    model2d.train()
     model3d.train()
     with torch.no_grad():
         for vis_itr, vis_data in enumerate(val_loader):
@@ -253,6 +252,10 @@ def visualization(cfg, model2d, model3d, val_loader, p, device):
             model3d.update_projection(cfg, vis_batch["gt_height"], vis_batch["gt_pitch"])
             
             vis_o = model2d(vis_batch["input_image"].contiguous().float())
+            
+            # a = torch.argmax(vis_o, dim =1)
+            # print(torch.unique(a))
+
             vis_o = vis_o.softmax(dim=1)
             vis_o = vis_o/torch.max(torch.max(vis_o, dim=2, keepdim=True)[0], dim=3, keepdim=True)[0] 
             # print("shape of o before max", o.shape)
@@ -291,8 +294,12 @@ def visualization(cfg, model2d, model3d, val_loader, p, device):
                 vis_cls_score_pred_b[vis_cls_score_pred_b  < cfg.threshold_score] = 0
 
                 #unormalize the rho and delta z
-                vis_rho_pred_b = vis_rho_pred_b * (cfg.max_lateral_offset - cfg.min_lateral_offset) + cfg.min_lateral_offset
-                vis_delta_z_pred_b = vis_delta_z_pred_b * (cfg.max_delta_z - cfg.min_delta_z) + cfg.min_delta_z
+                if cfg.normalize == True:
+                    vis_rho_pred_b = vis_rho_pred_b * (cfg.max_lateral_offset - cfg.min_lateral_offset) + cfg.min_lateral_offset
+                    vis_delta_z_pred_b = vis_delta_z_pred_b * (cfg.max_delta_z - cfg.min_delta_z) + cfg.min_delta_z
+                else: 
+                    vis_rho_pred_b = vis_rho_pred_b
+                    vis_delta_z_pred_b = vis_delta_z_pred_b
 
                 vis_cam_height_b = vis_batch["vis_gt_height"][b]
                 vis_cam_pitch_b = vis_batch["vis_gt_pitch"][b]
@@ -300,7 +307,7 @@ def visualization(cfg, model2d, model3d, val_loader, p, device):
                 #Cluster the tile embedding as per lane class
                 # return the tile labels: 0 marked as no lane
                 clustered_tiles = embedding_post_process(vis_embedding_b, vis_cls_score_pred_b) 
-                # print("check if the num of lanes::",np.unique(clustered_tiles))
+                print("check if the num of lanes::",np.unique(clustered_tiles))
                 
                 #extract points from predictions
                 points = [] ## ---> [[points lane1 (lists)], [points lane2(lists))], ...]
@@ -340,12 +347,13 @@ def visualization(cfg, model2d, model3d, val_loader, p, device):
                 gc.collect()
                 #TODO: increase the number of visualization images to be displayed and retain the step at per epoch
                 break #visualize only one sample for now per vis iteration
-            break
+            
+            if vis_itr == 2: 
+                break
 
-def validate(model2d, model3d, val_loader, cfg, p, devoce):
+def validate(model2d, model3d, val_loader, cfg, p, device):
     
-    model2d.train()
-    model3d.train()
+    model3d.eval()
     
     print(">>>>>>>Validating<<<<<<<<")
     val_loss = 0.0
@@ -374,6 +382,11 @@ def validate(model2d, model3d, val_loader, cfg, p, devoce):
                 model3d.update_projection(cfg, val_batch["gt_height"], val_batch["gt_pitch"])
 
                 val_o = model2d(val_batch["input_image"].contiguous().float())
+                
+                # print("checking if the 2d model is correct in validate")
+                # a = torch.argmax(val_o, dim =1)
+                # print(torch.unique(a))
+                
                 val_o = val_o.softmax(dim=1)
                 val_o = val_o/torch.max(torch.max(val_o, dim=2, keepdim=True)[0], dim=3, keepdim=True)[0] 
                 # print("shape of o before max", o.shape)
@@ -392,7 +405,8 @@ def validate(model2d, model3d, val_loader, cfg, p, devoce):
                 val_loss1 = discriminative_loss(p(val_out1["embed_out"]), val_batch["gt_lane_cls"],cfg)
                 val_loss2 = classification_regression_loss(L1loss, BCEloss, CEloss, val_rho_pred, val_batch["gt_rho"], val_delta_z_pred, val_batch["gt_delta_z"], val_cls_score_pred, val_batch["gt_cls_score"], val_phi_pred, val_batch["gt_phi"])
             
-                val_overall_loss = cfg.w_clustering_Loss * val_loss1 + cfg.w_classification_Loss * val_loss2
+                # val_overall_loss = cfg.w_clustering_Loss * val_loss1 + cfg.w_classification_Loss * val_loss2
+                val_overall_loss = val_loss1 + val_loss2 
                 
                 val_batch_loss = val_overall_loss.detach().cpu() / cfg.batch_size
                 val_loss += val_batch_loss
@@ -420,8 +434,12 @@ def validate(model2d, model3d, val_loader, cfg, p, devoce):
                     val_cls_score_pred_b[val_cls_score_pred_b  < cfg.threshold_score] = 0
                     
                     #unormalize the rho and delta z
-                    val_rho_pred_b = val_rho_pred_b * (cfg.max_lateral_offset - cfg.min_lateral_offset) + cfg.min_lateral_offset
-                    val_delta_z_pred_b = val_delta_z_pred_b * (cfg.max_delta_z - cfg.min_delta_z) + cfg.min_delta_z
+                    if cfg.normalize == True:
+                        val_rho_pred_b = val_rho_pred_b * (cfg.max_lateral_offset - cfg.min_lateral_offset) + cfg.min_lateral_offset
+                        val_delta_z_pred_b = val_delta_z_pred_b * (cfg.max_delta_z - cfg.min_delta_z) + cfg.min_delta_z
+                    else:
+                        val_rho_pred_b = val_rho_pred_b
+                        val_delta_z_pred_b = val_delta_z_pred_b
 
                     val_cam_height_b = val_batch["val_gt_height"][b]
                     val_cam_pitch_b = val_batch["val_gt_pitch"][b]
@@ -470,7 +488,7 @@ def validate(model2d, model3d, val_loader, cfg, p, devoce):
         "laneline z error (close)  {:.8} m\n"
         "laneline z error (far)  {:.8} m\n\n"
         .format(eval_stats[0], eval_stats[1], eval_stats[2], eval_stats[3],
-                eval_stats[4], eval_stats[5], eval_stats[6], eval_stats[7]))
+                eval_stats[4], eval_stats[5], eval_stats[6]))
 
     return eval_stats, val_avg_loss 
 
@@ -490,7 +508,6 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
         model2d.train()
         model3d.train()
     else:
-        model2d.train()
         model3d.train()
 
     for itr, data in enumerate(train_loader):
@@ -532,7 +549,12 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
         
         with Timing(timings, "2d_forward_pass"):
             #forward pass
-            o = model2d(batch["input_image"].contiguous().float())            
+            o = model2d(batch["input_image"].contiguous().float())
+            
+            # print("checking if model 2d correct in training")
+            # a = torch.argmax(o, dim =1)
+
+            # print(torch.unique(a))            
             o = o.softmax(dim=1)
             o = o/torch.max(torch.max(o, dim=2, keepdim=True)[0], dim=3, keepdim=True)[0] 
             # print("shape of o before max", o.shape)
@@ -556,8 +578,11 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
 
             # print("==>discriminative loss::", loss1.item())
             # print("==>classification loss::", loss2.item())
-            overall_loss = cfg.w_clustering_Loss * loss1 + cfg.w_classification_Loss * loss2
+
+            # overall_loss = cfg.w_clustering_Loss * loss1 + cfg.w_classification_Loss * loss2
+            overall_loss = loss1 + loss2
             print("==>overall loss::", overall_loss.item())
+        
         with Timing(timings, "backward_pass"):        
             overall_loss.backward()
         
@@ -584,7 +609,9 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
                     'lr': scheduler2.optimizer.param_groups[0]['lr'],
                     **{f'time_{k}': v['time'] / v['count'] for k, v in timings.items()}
                     }, commit=True)
-
+            """"
+            #TODO: remove it later just put here to test the intial training, once the loader is fast remove it and test it again.
+            """
             tr_loss  = 0.0
         
         # eval loop
@@ -611,7 +638,7 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
                 visualization(cfg, model2d, model3d, val_loader, p, device)
 
         #TODO: add the condition for e2e
-        model2d.train()
+        model2d.eval()
         model3d.train()
 
     #reporting epoch train time 
@@ -633,7 +660,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataset_type", type = str, default = "Apollo3d", help = "Dataset type")
     parser.add_argument("--config", type=str, default="configs/config_anchorless_3dlane.py", help="config file")
     parser.add_argument("--no_wandb", dest="no_wandb", action="store_true", help="disable wandb")
-    parser.add_argument("--seed", type=int, default=27, help="random seed")
+    parser.add_argument("--seed", type=int, default=12, help="random seed")
     parser.add_argument("--baseline", type=bool, default=False, help="enable baseline")
     parser.add_argument("--pretrained2d", type=bool, default=True, help="enable pretrained 2d lane detection model")
     parser.add_argument("--pretrained3d", type=bool, default=False, help="enable pretrained anchorless 3d lane detection model")
@@ -686,11 +713,12 @@ if __name__ == "__main__":
 
     #dataloader
     train_dataset = Apollo3d_loader(data_root, data_split, cfg = cfg, phase = "train")
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.num_workers, collate_fn = collate_fn, pin_memory=True)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.num_workers, collate_fn = collate_fn, 
+                                                pin_memory=True, drop_last=True, prefetch_factor=cfg.prefetch_factor, persistent_workers=True)
 
-    # # # TODO: split the test set into val and test set after the training is verified.
     val_dataset = Apollo3d_loader(data_root, data_split, cfg = cfg, phase = "test")
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.num_workers, collate_fn = collate_fn, pin_memory=True)
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.num_workers, collate_fn = collate_fn, pin_memory=True,
+                                            prefetch_factor=cfg.prefetch_factor, persistent_workers=True)
     
     train_loader_len = len(train_loader)
     val_loader_len = len(val_loader)
@@ -708,8 +736,12 @@ if __name__ == "__main__":
     else: 
         model2d = load_model(cfg, baseline=args.baseline, pretrained = args.pretrained2d).to(device) #args.pretrained2d == TRUE
         model3d = load_3d_model(cfg, device, pretrained=args.pretrained3d).to(device)
+        print(model3d)
         wandb.watch(model3d)
-
+    
+    #TODO: remove it later when e2e 
+    model2d.eval()
+    
     #general loss functions
     L1loss= nn.L1Loss().to(device)
     #NOTE: verify that BCEWithLogitsLoss for score as We know that when the last layer has acitvations normal loss can be used (numerically stable rn) 

@@ -482,11 +482,17 @@ class Apollo3d_loader(Dataset):
         norm_gt_lateral_offset = self.normalize(gt_lateral_offset, self.cfg.min_lateral_offset, self.cfg.max_lateral_offset)
         norm_gt_delta_z = self.normalize(gt_delta_z, self.cfg.min_delta_z, self.cfg.max_delta_z)
         
-        batch.update({'gt_rho':torch.from_numpy(gt_lateral_offset)})
+        if self.cfg.normalize == True:
+            
+            batch.update({'gt_rho':torch.from_numpy(norm_gt_lateral_offset)})    
+            batch.update({'gt_delta_z':torch.from_numpy(norm_gt_delta_z)})
+        else : 
+            batch.update({'gt_rho':torch.from_numpy(gt_lateral_offset)})    
+            batch.update({'gt_delta_z':torch.from_numpy(gt_delta_z)})
+        
         batch.update({'gt_phi':torch.from_numpy(gt_lateral_angleoffset)})
         batch.update({'gt_clscore':torch.from_numpy(gt_cls_score)})
         batch.update({'gt_lane_class':torch.from_numpy(gt_lane_class)})
-        batch.update({'gt_delta_z':torch.from_numpy(gt_delta_z)})
         
         #convert the image to tensor
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB) #( BGR -> RGB)
@@ -545,41 +551,34 @@ if __name__ == "__main__":
 
     #unit test for the data loader
     #TODO: add the hardcoded arguments to config file later on
-    data_root = '/home/gautam/e2e/lane_detection/3d_approaches/3d_dataset/Apollo_Sim_3D_Lane_Release'
-    data_splits = '/home/gautam/e2e/lane_detection/3d_approaches/3d_dataset/3D_Lane_Synthetic_Dataset/old_data_splits/standard'
-    config_path = '/home/gautam/Thesis/E2E_3DLane_AuxNet/configs/config_anchorless_3dlane.py'
+    data_root = '/home/ims-robotics/Documents/gautam/dataset/Apollo_Sim_3D_Lane_Release'
+    data_splits = '/home/ims-robotics/Documents/gautam/dataset/data_splits/standard'
+    config_path = '/home/ims-robotics/Documents/gautam/E2E_3DLane_AuxNet/configs/config_anchorless_3dlane.py'
     
     cfgs = Config.fromfile(config_path)
 
     dataset = Apollo3d_loader(data_root, data_splits, cfg = cfgs, phase = 'train')
-    loader = DataLoader(dataset, batch_size=cfgs.batch_size, shuffle=True, num_workers=1, collate_fn=collate_fn)
+    loader = DataLoader(dataset, batch_size=cfgs.batch_size, shuffle=True, num_workers=8, collate_fn=collate_fn, prefetch_factor=2, persistent_workers=True)
 
-    # max_list = []
-    # min_list = []
+    max_list = []
+    min_list = []
 
     start_point = time.time()
     for i, data in enumerate(loader):
         batch_time = time.time()
         
-        print(f"time taken to process one batch",time.time() - batch_time)
-        print(data[9])
+        print("time taken to process one batch",pprint_seconds(time.time() - batch_time))
+        # print(data[9])
         
         
         start_point = batch_time
-
-        # print("checking the rho",data[5].shape)
-        # print("checking the values of idx",data[10])
-    #     # print("checking the detlat",data[9])
-    #     # print("checking if class score",data[7])
+        # print("checking the detlat",data[9])
+        # print("checking if class score",data[7])
         
     #     for j in range(cfgs.batch_size):
     #         print("checking min and max for iteration:::",i)
-    #         # print(data[9][i].shape)
-    #         # print(data[9].shape)
     #         max_list.append(data[9][j].max())
     #         min_list.append(data[9][j].min())
-    #         # print(data[9][i].max())
-    #         # print(data[9][i].min())
 
 
     # print("The max value of delta_z for the whole dataset is:::",  max(max_list))

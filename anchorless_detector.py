@@ -118,7 +118,7 @@ class Anchorless3DLanedetector(nn.Module):
             self.H_g2cam = self.H_g2cam.cuda()
             self.H_ipmnorm2g = self.H_ipmnorm2g.cuda() 
 
-        size_top = torch.Size([self.batch_size, np.int(cfg.ipm_h), np.int(cfg.ipm_w)])
+        size_top = torch.Size([self.M_inv.shape[0], np.int(cfg.ipm_h), np.int(cfg.ipm_w)])
 
         # ----------------- BEV projective grid -----------------
         self.projective_layer = ProjectiveGridGenerator(size_top, self.M_inv)

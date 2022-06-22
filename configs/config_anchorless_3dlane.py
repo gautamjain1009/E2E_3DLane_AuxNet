@@ -1,5 +1,7 @@
 import numpy as np 
 
+#TOOD: remove it later and verify it is of no use
+
 dataset_dir = "/home/gautam/e2e/lane_detection/3d_approaches/3d_dataset/Apollo_Sim_3D_Lane_Release"
 # #TODO: Optimize this config
 # """
@@ -45,6 +47,7 @@ aggregator = dict(type= "SCNN")
 
 heads = dict(type = 'PlainDecoder')
 
+#TODO: move this to CLI args later
 pretrained_2dmodel_path = "/home/ims-robotics/Documents/gautam/E2E_3DLane_AuxNet/nets/checkpoints/RGB_b16_r18_scnn_binary_2dLane_16_June_0.007081503048539162_98.pth"
 lane_pred_dir = "/home/ims-robotics/Documents/gautam/E2E_3DLane_AuxNet/nets/3dlane_detection"
 
@@ -53,8 +56,8 @@ lane_pred_dir = "/home/ims-robotics/Documents/gautam/E2E_3DLane_AuxNet/nets/3dla
 """
 # encode_mode ="overlapping"
 # encode_mode = "1x1non"
-encode_mode = "32x32non"
-# encode_mode = "1x1_mix_32X32"
+# encode_mode = "32x32non"
+encode_mode = "1x1_mix_32X32"
 
 #(channles, K_size, padding, stride)
 if encode_mode == "overlapping":
@@ -81,8 +84,8 @@ ipm_w = 128 * 2
 
 augmentation = True
 
-img_mean = [0.485, 0.456, 0.406] 
-img_std = [0.229, 0.224, 0.225]
+img_mean = [103.939, 116.779, 123.68]
+img_std = [1., 1., 1.]
 
 no_centerline = True
 
@@ -93,8 +96,8 @@ min_lateral_offset = -23
 max_lateral_offset = 23
 
 #TODO: NOTE: need to calculate this value first over the train dataset
-min_delta_z = -1
-max_delta_z = 1.5
+min_delta_z = -7.0678
+max_delta_z = 3.5718
 
 #init camera height and pitch
 cam_height = 1.55
@@ -130,15 +133,18 @@ May be to process the masks for the section 3.2 I need not multiply the ipm_h an
 """
 
 # ###logging params
-date_it = "17_June_"
-train_run_name = "Anchorless3DLane_evalISSUE" + date_it
-val_frequency = 4
-vis_frequency = 4
-train_log_frequency = 20
+date_it = "27_June_"
+train_run_name = "Anchorless3DLane_norm_b8_noweights_32X1nonoverlap" + date_it
+val_frequency = 500
+vis_frequency = 100
+train_log_frequency = 10
+
+#if the predictions needs to be normalized
+normalize = True
 
 # #Hyperparams
 epochs = 100
-batch_size = 16
+batch_size = 8
 num_workers = 8
 l2_lambda = 1e-4
 # log_frequency_steps = 200
@@ -152,13 +158,13 @@ prefetch_factor = 2
 bg_weight = 0.4 #used in the loss function to reduce the importance of one class in tusimple
 
 #TODO: try different combination later as per the gradients and in the end try to balance them
-w_clustering_Loss = 0.2
-w_classification_Loss = 0.8
+w_clustering_Loss = 0.5
+w_classification_Loss = 0.5
 threshold_score = 0.3
 
 """
 NOTE:: NOTE:: NOTE:: NOTE::
 In the end I would say that, yes this method of mine is one camera based. Just take the example of comma and decode
-how can I make my approach work for any camera whatsoever, more over read thatn once paper which is claminig this also.
+how can I make my approach work for any camera whatsoever, more over read that once paper which is claminig this also.
 
 """
