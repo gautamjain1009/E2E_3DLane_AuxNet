@@ -54,24 +54,31 @@ lane_pred_dir = "/home/ims-robotics/Documents/gautam/E2E_3DLane_AuxNet/nets/3dla
 """
 3d model params (anchorless) for Apollo SIM3D dataset
 """
+tile_size = 16
 # encode_mode ="overlapping"
-# encode_mode = "1x1non"
 # encode_mode = "32x32non"
 encode_mode = "1x1_mix_32X32"
 
+#TODO: optimize a bit more later
 #(channles, K_size, padding, stride)
 if encode_mode == "overlapping":
-    encode_config = [(8,3,1,1), 'M', (16,3,1,1), 'M', (32,3,1,1), 'M', (64,3,1,1), "M", (64,3,1,1), "M", (64,3,1,1), (13,1,0,1)]
-
-elif encode_mode == "1x1non":
-    encode_config = [(8,1,0,1), (16,1,0,1), (13,1,0,1), (13,13,0,32), (13,1,0,1) ]
+    if tile_size == 32:
+        encode_config = [(8,3,1,1), 'M', (16,3,1,1), 'M', (32,3,1,1), 'M', (64,3,1,1), "M", (64,3,1,1), "M", (64,3,1,1), (13,1,0,1)]
+    elif tile_size == 16:
+        encode_config = [(8,3,1,1), 'M', (16,3,1,1), 'M', (32,3,1,1), 'M', (64,3,1,1), "M", (64,3,1,1), (13,1,0,1)]
 
 elif encode_mode == "32x32non":
-    encode_config = [(1,32,0,32), (8,1,0,1), (16,1,0,1), (13,1,0,1)]
+    if tile_size == 32:
+        encode_config = [(1,32,0,32), (8,1,0,1), (16,1,0,1), (13,1,0,1)]
+    elif tile_size == 16:
+        encode_config = [(1,16,0,16), (8,1,0,1), (16,1,0,1), (13,1,0,1)]
 
 elif encode_mode == "1x1_mix_32X32":
-    encode_config = [(8,1,0,1), (16,1,0,1), (1,32,0,32), (13,1,0,1)]
- 
+    if tile_size == 32:
+        encode_config = [(8,1,0,1), (16,1,0,1), (1,32,0,32), (13,1,0,1)]
+    elif tile_size == 16:
+        encode_config = [(8,1,0,1), (16,1,0,1), (1,16,0,16), (13,1,0,1)]
+
 color_list = [[50,1],[100,2],[150,3],[200,4],[250,5],[255,6]] #(color, lane_class)
 org_h = 1080
 org_w = 1920
@@ -123,7 +130,6 @@ n_bins = 10
 #TODO: Change the values as per the Gen_net paper
 delta_pull = 0.1 ## delta_v 
 delta_push = 3.0 ## delta_d 
-tile_size = 32
 embed_dim = 4
 
 """""
@@ -144,8 +150,8 @@ normalize = True
 
 # #Hyperparams
 epochs = 100
-batch_size = 8
-num_workers = 8
+batch_size = 1
+num_workers = 1
 l2_lambda = 1e-4
 # log_frequency_steps = 200
 lr = 0.001 

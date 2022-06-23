@@ -235,4 +235,4 @@ def load_3d_model(cfg, device, pretrained = False):
                 nn.init.constant_(m.bias, 0)
         print("=> Initialized the anchorless 3d lane detection model weights")
             
-    return model 
+    return model

@@ -178,7 +178,6 @@ def discriminative_loss(embedding, seg_gt, cfg, device = None):
     return:
     clustering loss/ clustering loss (aka), push and pull loss
     """
-
     batch_size = embedding.shape[0]
 
     pull_loss = torch.tensor(0, dtype=embedding.dtype, device=embedding.device) #(var)
@@ -738,7 +737,7 @@ if __name__ == "__main__":
         model3d = load_3d_model(cfg, device, pretrained=args.pretrained3d).to(device)
         print(model3d)
         wandb.watch(model3d)
-    
+        
     #TODO: remove it later when e2e 
     model2d.eval()
     
@@ -749,7 +748,7 @@ if __name__ == "__main__":
     CEloss = nn.CrossEntropyLoss().to(device)
     m = nn.Sigmoid()
     #TODO: Chnage the by selected tile_size in the end
-    p = nn.MaxPool2d(32,stride = 32)
+    p = nn.MaxPool2d(cfg.tile_size,stride = cfg.tile_size)
 
     #NOTE:: Currently both the schedulers have same parameters:: Separate them IF needed
     #NOTE: if args.pretrained2d == "False" and args.pretrained3d == "False" the network will be trained end to end
