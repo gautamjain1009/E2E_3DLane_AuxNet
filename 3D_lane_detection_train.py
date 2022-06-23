@@ -357,7 +357,8 @@ def validate(model2d, model3d, val_loader, cfg, p, device):
     print(">>>>>>>Validating<<<<<<<<")
     val_loss = 0.0
     val_batch_loss = 0.0
-    lane_pred_file = os.path.join(cfg.lane_pred_dir, 'test_pred_file.json')
+    pred_file_name =  cfg.train_run_name + 'test_pred_file.json'
+    lane_pred_file = os.path.join(cfg.lane_pred_dir, pred_file_name)
     
     with torch.no_grad():
         with open(lane_pred_file, 'w') as jsonFile:
@@ -737,7 +738,7 @@ if __name__ == "__main__":
         model3d = load_3d_model(cfg, device, pretrained=args.pretrained3d).to(device)
         print(model3d)
         wandb.watch(model3d)
-        
+
     #TODO: remove it later when e2e 
     model2d.eval()
     
