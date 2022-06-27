@@ -352,7 +352,7 @@ def visualization(cfg, model2d, model3d, val_loader, p, device):
 
 def validate(model2d, model3d, val_loader, cfg, p, device):
     
-    model3d.eval()
+    model3d.train()
     
     print(">>>>>>>Validating<<<<<<<<")
     val_loss = 0.0
@@ -383,9 +383,9 @@ def validate(model2d, model3d, val_loader, cfg, p, device):
 
                 val_o = model2d(val_batch["input_image"].contiguous().float())
                 
-                # print("checking if the 2d model is correct in validate")
-                # a = torch.argmax(val_o, dim =1)
-                # print(torch.unique(a))
+                print("checking if the 2d model is correct in validate")
+                a = torch.argmax(val_o, dim =1)
+                print(torch.unique(a))
                 
                 val_o = val_o.softmax(dim=1)
                 val_o = val_o/torch.max(torch.max(val_o, dim=2, keepdim=True)[0], dim=3, keepdim=True)[0] 
@@ -505,7 +505,6 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
 
     if args.e2e == True:
         #TOOD: solve this issue of missing outs when both are .train()
-        model2d.train()
         model3d.train()
     else:
         model3d.train()
@@ -551,10 +550,10 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
             #forward pass
             o = model2d(batch["input_image"].contiguous().float())
             
-            # print("checking if model 2d correct in training")
-            # a = torch.argmax(o, dim =1)
+            print("checking if model 2d correct in training")
+            a = torch.argmax(o, dim =1)
 
-            # print(torch.unique(a))            
+            print(torch.unique(a))            
             o = o.softmax(dim=1)
             o = o/torch.max(torch.max(o, dim=2, keepdim=True)[0], dim=3, keepdim=True)[0] 
             # print("shape of o before max", o.shape)
@@ -638,7 +637,6 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
                 visualization(cfg, model2d, model3d, val_loader, p, device)
 
         #TODO: add the condition for e2e
-        model2d.eval()
         model3d.train()
 
     #reporting epoch train time 
@@ -660,7 +658,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataset_type", type = str, default = "Apollo3d", help = "Dataset type")
     parser.add_argument("--config", type=str, default="configs/config_anchorless_3dlane.py", help="config file")
     parser.add_argument("--no_wandb", dest="no_wandb", action="store_true", help="disable wandb")
-    parser.add_argument("--seed", type=int, default=12, help="random seed")
+    parser.add_argument("--seed", type=int, default=27, help="random seed")
     parser.add_argument("--baseline", type=bool, default=False, help="enable baseline")
     parser.add_argument("--pretrained2d", type=bool, default=True, help="enable pretrained 2d lane detection model")
     parser.add_argument("--pretrained3d", type=bool, default=False, help="enable pretrained anchorless 3d lane detection model")
