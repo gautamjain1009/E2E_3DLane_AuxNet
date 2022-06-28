@@ -139,21 +139,20 @@ May be to process the masks for the section 3.2 I need not multiply the ipm_h an
 """
 
 # ###logging params
-date_it = "28_June_"
+date_it = "1_July_"
 train_run_name = "Anchorless3DLane_norm_b8_noweights_16X1nonoverlap" + date_it
 val_frequency = 500
 vis_frequency = 100
-train_log_frequency = 1
+train_log_frequency = 10
 
 #if the predictions needs to be normalized
 normalize = True
 
 # #Hyperparams
 epochs = 100
-batch_size = 7
-num_workers = 7
+batch_size = 8
+num_workers = 8
 l2_lambda = 1e-4
-# log_frequency_steps = 200
 lr = 0.001
 lrs_cd = 0
 lrs_factor = 0.75

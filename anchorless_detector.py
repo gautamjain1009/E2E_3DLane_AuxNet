@@ -197,6 +197,7 @@ class Anchorless3DLanedetector(nn.Module):
         self.cam_pitch = cam_pitch
 
     def update_projection_for_data_aug(self, aug_mats):
+        print("updating the Augmented projection matrix with gt cam_height and cam_pitch")
         """
             update transformation matrix when data augmentation have been applied, and the image augmentation matrix are provided
             Need to consider both the cases of 1. when using ground-truth cam_height, cam_pitch, update M_inv

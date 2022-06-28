@@ -80,9 +80,10 @@ def configure_worker(worker_id):
 class BatchDataLoader:
     '''Assumes batch_size == num_workers to ensure same ordering of segments in each batch'''
 
-    def __init__(self, loader, batch_size):
+    def __init__(self, loader, batch_size, mode):
         self.loader = loader
         self.batch_size = batch_size
+        self.mode = mode
 
     def __iter__(self):
         bs = self.batch_size
@@ -105,18 +106,19 @@ class BatchDataLoader:
             workers_seen.add(worker_id)
 
             if current_bs == bs:
-                collated_batch = self.collate_fn(batch)
+                start = time.time()
+                if self.mode == 'train':
+                    collated_batch = self.collate_fn_train(batch)
+                elif self.mode == 'test':
+                    collated_batch = self.collate_fn_val(batch)
+
+                # print(""checking the time)
                 yield collated_batch
                 batch = [None] * bs
                 current_bs = 0
                 workers_seen = set()
 
-    #   return stacked_frames, gt_plan, gt_plan_prob, segment_finished
-    def collate_fn(self, batch):
-        """
-        This function is used to collate the data for the dataloader
-        """
-
+    def collate_fn_train(self, batch):
         img_data = [item[0] for item in batch]
         img_data = torch.stack(img_data, dim = 0)
         
@@ -149,7 +151,6 @@ class BatchDataLoader:
         
         worker_idx = [item[12] for item in batch]
 
-        # if 'aug_mat' in batch[0]:
         aug_mat_data = [item[1] for item in batch]
         aug_mat_data = torch.stack(aug_mat_data, dim = 0)
 
@@ -158,6 +159,43 @@ class BatchDataLoader:
         # else: #no augmentation
         #     return [img_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data, gt_image_full_path, idx_data]
     
+    def collate_fn_val(self, batch):
+    
+        img_data = [item[0] for item in batch]
+        img_data = torch.stack(img_data, dim = 0)
+        
+        gt_camera_height_data = [item[1] for item in batch]
+        gt_camera_height_data = torch.stack(gt_camera_height_data, dim = 0)
+
+        gt_camera_pitch_data = [item[2] for item in batch]
+        gt_camera_pitch_data = torch.stack(gt_camera_pitch_data, dim = 0)
+
+        gt_lanelines_data = [item[3] for item in batch]
+
+        gt_rho_data = [item[4] for item in batch]
+        gt_rho_data = torch.stack(gt_rho_data, dim = 0)
+        
+        gt_phi_data = [item[5] for item in batch]
+        gt_phi_data = torch.stack(gt_phi_data, dim = 0)
+        
+        gt_cls_score_data = [item[6] for item in batch]
+        gt_cls_score_data = torch.stack(gt_cls_score_data, dim = 0)
+
+        gt_lane_class_data = [item[7] for item in batch]
+        gt_lane_class_data = torch.stack(gt_lane_class_data, dim = 0)
+
+        gt_delta_z_data = [item[8] for item in batch]
+        gt_delta_z_data = torch.stack(gt_delta_z_data, dim = 0)
+        
+        gt_image_full_path =[item[9] for item in batch]
+
+        idx_data = [item[10] for item in batch]
+        
+        worker_idx = [item[11] for item in batch]
+        
+        return [img_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data, gt_image_full_path, idx_data, worker_idx]
+                    # 0      1                2                   3                    4                    5                 6                 7                 8          9              10                  11              12
+
     def __len__(self):
         return len(self.loader)
 
@@ -577,7 +615,7 @@ def unnormalize(pred_data, min_pred, max_pred):
     return (pred_data * (max_pred - min_pred)) + min_pred
 
 class Apollo3d_loader(IterableDataset):
-    def __init__(self, data_root, data_splits, seed = 27, phase = "train", shuffle = True, cfg = None):
+    def __init__(self, data_root, data_splits, shuffle, phase, seed = 27, cfg = None):
         super(Apollo3d_loader, self,).__init__()
         
         self.cfg = cfg
@@ -589,6 +627,7 @@ class Apollo3d_loader(IterableDataset):
         self.generate_pertile = GeneratePertile(cfg)
         self.validation = False
         self.seed = seed
+        self.shuffle = shuffle
         
         if phase == "train":
             self.data_filepath = os.path.join(self.data_splits, "train.json")
@@ -626,7 +665,7 @@ class Apollo3d_loader(IterableDataset):
         return norm_data 
 
     def __len__(self):
-        return len(self.image_keys)
+        return len(self.image_keys)//self.cfg.batch_size
 
     def __iter__(self):
 
@@ -703,9 +742,14 @@ class Apollo3d_loader(IterableDataset):
 
             # yield batch
         # [img_data, aug_mat_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data, gt_image_full_path, idx_data]
-            yield batch["image"], batch["aug_mat"], batch["gt_height"], batch["gt_pitch"], batch["gt_lanelines"], batch["gt_rho"], batch["gt_phi"], batch["gt_clscore"], batch["gt_lane_class"], batch["gt_delta_z"], batch["img_full_path"], batch["idx"], batch["worker_id"]
+            if self.phase == "train":
+                yield batch["image"], batch["aug_mat"], batch["gt_height"], batch["gt_pitch"], batch["gt_lanelines"], batch["gt_rho"], batch["gt_phi"], batch["gt_clscore"], batch["gt_lane_class"], batch["gt_delta_z"], batch["img_full_path"], batch["idx"], batch["worker_id"]
+                #           0           1                   2                   3                       4               5                   6               7                           8                   9                   10                      11              12              
             #           0           1                   2                   3                       4               5                   6               7                           8                   9                   10                      11              12              
-
+                #           0           1                   2                   3                       4               5                   6               7                           8                   9                   10                      11              12              
+            else: 
+                yield batch["image"], batch["gt_height"], batch["gt_pitch"], batch["gt_lanelines"], batch["gt_rho"], batch["gt_phi"], batch["gt_clscore"], batch["gt_lane_class"], batch["gt_delta_z"], batch["img_full_path"], batch["idx"], batch["worker_id"]
+                #           0           1                   2                   3                       4               5                   6               7                           8                   9                   10                      11              12              
 if __name__ == "__main__":
 
     #unit test for the data loader
@@ -716,10 +760,10 @@ if __name__ == "__main__":
     
     cfgs = Config.fromfile(config_path)
 
-    dataset = Apollo3d_loader(data_root, data_splits, cfg = cfgs, phase = 'train')
-    loader = DataLoader(dataset, batch_size=None, num_workers=cfgs.batch_size, collate_fn= None, prefetch_factor=2, persistent_workers=True, worker_init_fn= configure_worker)
+    dataset = Apollo3d_loader(data_root, data_splits, shuffle = False, cfg = cfgs, phase = 'test')
+    loader = DataLoader(dataset, batch_size=None, num_workers=cfgs.batch_size, collate_fn= None, prefetch_factor=1, persistent_workers=True, worker_init_fn= configure_worker)
     
-    loader = BatchDataLoader(loader, batch_size = cfgs.batch_size)
+    loader = BatchDataLoader(loader, batch_size = cfgs.batch_size, mode = 'test')
     loader = BackgroundGenerator(loader)
 
     start_point = time.time()

@@ -1,3 +1,6 @@
+import warnings
+
+warnings.filterwarnings("ignore", category=UserWarning, message='Length of IterableDataset')
 from pprint import pprint
 import torch 
 import torch.nn as nn 
@@ -18,7 +21,7 @@ from timing import *
 import json
 from moviepy.video.io.bindings import mplfig_to_npimage
 #build import for different moduless
-from datasets.Apollo3d_loader import Apollo3d_loader, collate_fn, Visualization
+from datasets.Apollo3d_loader import Apollo3d_loader, Visualization, configure_worker, BatchDataLoader, BackgroundGenerator
 from models.build_model import load_model
 from utils.helper_functions import *
 from anchorless_detector import load_3d_model
@@ -708,19 +711,19 @@ if __name__ == "__main__":
     
     #initialise the evaluator
     evaluator = Apollo_3d_eval.LaneEval(cfg)
-
-    #dataloader
-    train_dataset = Apollo3d_loader(data_root, data_split, cfg = cfg, phase = "train")
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.num_workers, collate_fn = collate_fn, 
-                                                pin_memory=True, drop_last=True, prefetch_factor=cfg.prefetch_factor, persistent_workers=True)
-
-    val_dataset = Apollo3d_loader(data_root, data_split, cfg = cfg, phase = "test")
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.num_workers, collate_fn = collate_fn, pin_memory=True,
-                                            prefetch_factor=cfg.prefetch_factor, persistent_workers=True)
     
+    train_dataset = Apollo3d_loader(data_root, data_split, shuffle = True, cfg = cfg, phase = 'train')
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=None, num_workers=cfg.batch_size, collate_fn= None, prefetch_factor=2, persistent_workers=True, worker_init_fn= configure_worker)
+    train_loader = BatchDataLoader(train_loader, batch_size = cfg.batch_size, mode ='train')
     train_loader_len = len(train_loader)
+    train_loader = BackgroundGenerator(train_loader)
+    
+    val_dataset = Apollo3d_loader(data_root, data_split, shuffle = False, cfg = cfg, phase = 'test')
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=None, num_workers=cfg.batch_size, collate_fn= None, prefetch_factor=2, persistent_workers=True, worker_init_fn= configure_worker)
+    val_loader = BatchDataLoader(val_loader, batch_size = cfg.batch_size, mode = 'test')
     val_loader_len = len(val_loader)
-
+    val_loader = BackgroundGenerator(val_loader)
+    
     print("===> batches in train loader", train_loader_len)
     print("===> batches in val loader", val_loader_len)
     
