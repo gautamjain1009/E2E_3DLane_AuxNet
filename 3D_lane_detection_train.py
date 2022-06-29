@@ -176,7 +176,7 @@ def discriminative_loss(embedding, seg_gt, cfg, device = None):
     Arguments: 
     (H* = tile_height, W* = tile_width)
     Embedding == (1,4,H*,W*)
-    seg_gt = del_i,j for classification if that tile is part of the lane or not
+    seg_gt = lane class or background
     
     return:
     clustering loss/ clustering loss (aka), push and pull loss
@@ -233,14 +233,14 @@ def discriminative_loss(embedding, seg_gt, cfg, device = None):
     loss_embedding = pull_loss + push_loss
     return loss_embedding
 
-def visualization(cfg, model2d, model3d, val_loader, p, device):
+def visualization(cfg, model2d, model3d, vis_loader, p, device):
 
     print(">>>>>>>Visualizing<<<<<<<<")
     vis = Visualization(cfg.org_h, cfg.org_w, cfg.resize_h, cfg.resize_w, cfg.K, cfg.ipm_w, cfg.ipm_h, cfg.crop_y, cfg.top_view_region)
     
     model3d.train()
     with torch.no_grad():
-        for vis_itr, vis_data in enumerate(val_loader):
+        for vis_itr, vis_data in enumerate(vis_loader):
             vis_batch = {}
             vis_batch.update({"vis_gt_height":vis_data[1].cpu().numpy(),
                             "vis_gt_pitch":vis_data[2].cpu().numpy(),
@@ -386,7 +386,6 @@ def validate(model2d, model3d, val_loader, cfg, p, device):
 
                 val_o = model2d(val_batch["input_image"].contiguous().float())
                 
-                print("checking if the 2d model is correct in validate")
                 a = torch.argmax(val_o, dim =1)
                 print(torch.unique(a))
                 
@@ -408,8 +407,8 @@ def validate(model2d, model3d, val_loader, cfg, p, device):
                 val_loss1 = discriminative_loss(p(val_out1["embed_out"]), val_batch["gt_lane_cls"],cfg)
                 val_loss2 = classification_regression_loss(L1loss, BCEloss, CEloss, val_rho_pred, val_batch["gt_rho"], val_delta_z_pred, val_batch["gt_delta_z"], val_cls_score_pred, val_batch["gt_cls_score"], val_phi_pred, val_batch["gt_phi"])
             
-                # val_overall_loss = cfg.w_clustering_Loss * val_loss1 + cfg.w_classification_Loss * val_loss2
-                val_overall_loss = val_loss1 + val_loss2 
+                val_overall_loss = cfg.w_clustering_Loss * val_loss1 + cfg.w_classification_Loss * val_loss2
+                # val_overall_loss = val_loss1 + val_loss2 
                 
                 val_batch_loss = val_overall_loss.detach().cpu() / cfg.batch_size
                 val_loss += val_batch_loss
@@ -449,9 +448,9 @@ def validate(model2d, model3d, val_loader, cfg, p, device):
                     
                     #Cluster the tile embedding as per lane class
                     # return the tile labels: 0 marked as no lane
-                    val_clustered_tiles = embedding_post_process(val_embedding_b, val_cls_score_pred_b) 
+                    val_clustered_tiles = embedding_post_process(val_embedding_b, val_cls_score_pred_b) [0,1,2,3,3]
                     print("check if the num of lanes::",np.unique(val_clustered_tiles))
-                    
+
                     # extract points from predictions
                     points = [] ## ---> [[points lane1 (lists)], [points lane2(lists))], ...]
                     for i, lane_idx in enumerate(np.unique(val_clustered_tiles)): #must loop as the number of lanes present in the scene, max == 5
@@ -500,6 +499,8 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
     
     batch_loss = 0.0 
     tr_loss = 0.0 
+    tr_loss1 = 0.0
+    tr_loss2 = 0.0
     start_point = time.time()
 
     timings = dict()
@@ -526,7 +527,6 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
 
         #get the data
         batch = {}
-
         with Timing(timings, "inputs_to_GPU"):
             batch.update({"input_image":data[0].to(device),
                         "aug_mat":data[1].to(device).float(),
@@ -572,41 +572,51 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
         delta_z_pred = out_pathway2[:,1,...]
         cls_score_pred = out_pathway2[:,2,...]
         # print(cls_score_pred.round())
-        phi_pred = out_pathway2[:,3:,...] 
+        phi_pred = out_pathway2[:,3:,...]
 
         with Timing(timings, "3d_Lane_loss_calculation"):
             loss1 = discriminative_loss(p(out1["embed_out"]), batch["gt_lane_cls"],cfg)
             loss2 = classification_regression_loss(L1loss, BCEloss, CEloss, rho_pred, batch["gt_rho"], delta_z_pred, batch["gt_delta_z"], cls_score_pred, batch["gt_cls_score"], phi_pred, batch["gt_phi"])
 
-            # print("==>discriminative loss::", loss1.item())
-            # print("==>classification loss::", loss2.item())
+            print("==>discriminative loss::", loss1.item())
+            print("==>classification loss::", loss2.item())
 
-            # overall_loss = cfg.w_clustering_Loss * loss1 + cfg.w_classification_Loss * loss2
-            overall_loss = loss1 + loss2
+            overall_loss = cfg.w_clustering_Loss * loss1 + cfg.w_classification_Loss * loss2
+            # overall_loss = loss1 + loss2
             print("==>overall loss::", overall_loss.item())
         
         with Timing(timings, "backward_pass"):        
             overall_loss.backward()
         
+        with Timing(timings, 'clip_gradients'):
+            torch.nn.utils.clip_grad_norm_(model3d.parameters(), cfg.grad_clip)
+        
         with Timing(timings,  "optimizer_step"): 
             optimizer2.step()
 
+        batch_loss1 = loss1.detach().cpu()/cfg.batch_size
+        batch_loss2 = loss2.detach().cpu()/cfg.batch_size
         batch_loss = overall_loss.detach().cpu() / cfg.batch_size
         train_batch_time= multitimings.end('train_batch')
 
         #reporting model fps
         fps = cfg.batch_size / train_batch_time
         print(f"> Batch trained: {train_batch_time:.2f}s (FPS={fps:.2f}).")
-
+        
+        tr_loss1 += batch_loss1
+        tr_loss2 += batch_loss2
         tr_loss += batch_loss
 
         if should_log_train:
-
+            running_loss1 = tr_loss1.item()/ cfg.train_log_frequency
+            running_loss2 = tr_loss2.item()/cfg.train_log_frequency
             running_loss = tr_loss.item() / cfg.train_log_frequency
             print(f"Epoch: {epoch+1}/{cfg.epochs}. Done {itr+1} steps of ~{train_loader_len}. Running Loss:{running_loss:.4f}")
             pprint_stats(timings)
 
             wandb.log({'epoch': epoch, 
+                    'discrminative_loss': running_loss1,
+                    'class_reg_loss': running_loss2,
                     'train_loss':running_loss,
                     'lr': scheduler2.optimizer.param_groups[0]['lr'],
                     **{f'time_{k}': v['time'] / v['count'] for k, v in timings.items()}
@@ -615,6 +625,8 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
             #TODO: remove it later just put here to test the intial training, once the loader is fast remove it and test it again.
             """
             tr_loss  = 0.0
+            tr_loss1 = 0.0
+            tr_loss2 = 0.0
         
         # eval loop
         if should_run_valid:
@@ -637,7 +649,7 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
         #vis loop
         if should_run_vis:
             with Timing(timings, "visualize predictions and ground truth"):
-                visualization(cfg, model2d, model3d, val_loader, p, device)
+                visualization(cfg, model2d, model3d, vis_loader, p, device)
 
         #TODO: add the condition for e2e
         model3d.train()
@@ -681,8 +693,8 @@ if __name__ == "__main__":
 
     # for reproducibility
     torch.manual_seed(args.seed)
-    np.random.seed(args.seed) 
-    random.seed(args.seed)
+    # np.random.seed(args.seed) 
+    # random.seed(args.seed)
 
     #trained model paths
     checkpoints_dir = './nets/3dlane_detection' + '/' + args.dataset_type + '/checkpoints'
@@ -723,6 +735,12 @@ if __name__ == "__main__":
     val_loader = BatchDataLoader(val_loader, batch_size = cfg.batch_size, mode = 'test')
     val_loader_len = len(val_loader)
     val_loader = BackgroundGenerator(val_loader)
+
+    vis_dataset = Apollo3d_loader(data_root, data_split, shuffle = False, cfg = cfg, phase = 'test')
+    vis_loader = torch.utils.data.DataLoader(val_dataset, batch_size=None, num_workers=cfg.batch_size, collate_fn= None, prefetch_factor=2, persistent_workers=False, worker_init_fn= configure_worker)
+    vis_loader = BatchDataLoader(vis_loader, batch_size = cfg.batch_size, mode = 'test')
+    vis_loader_len = len(vis_loader)
+    vis_loader = BackgroundGenerator(vis_loader)
     
     print("===> batches in train loader", train_loader_len)
     print("===> batches in val loader", val_loader_len)

@@ -58,7 +58,7 @@ def HoughLine(image):
 
             return accumulator, thetas, rs, lane_exist
 
-def embedding_post_process(embedding, bin_seg, band_width=1.5, max_num_lane=5):
+def embedding_post_process(embedding, bin_seg, band_width=0.1, max_num_lane=5):
     """
     First use mean shift to find dense cluster center.
 

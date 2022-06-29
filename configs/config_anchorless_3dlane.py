@@ -139,8 +139,8 @@ May be to process the masks for the section 3.2 I need not multiply the ipm_h an
 """
 
 # ###logging params
-date_it = "1_July_"
-train_run_name = "Anchorless3DLane_norm_b8_noweights_16X1nonoverlap" + date_it
+date_it = "4_July_"
+train_run_name = "Trainmode_Anchorless3DLane_norm_b8_50:50weights_16X1nonoverlap_CornFalse_0.001_0.1pull_clip20" + date_it
 val_frequency = 500
 vis_frequency = 100
 train_log_frequency = 10
@@ -166,7 +166,8 @@ bg_weight = 0.4 #used in the loss function to reduce the importance of one class
 w_clustering_Loss = 0.5
 w_classification_Loss = 0.5
 threshold_score = 0.3
-
+allign_corners = False
+grad_clip = 20
 """
 NOTE:: NOTE:: NOTE:: NOTE::
 In the end I would say that, yes this method of mine is one camera based. Just take the example of comma and decode

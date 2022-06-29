@@ -65,6 +65,7 @@ class Anchorless3DLanedetector(nn.Module):
         self.embedding_dim = cfg.embedding_dim
         self.delta_push = cfg.delta_push
         self.delta_pull = cfg.delta_pull
+        self.cfg = cfg
 
         org_img_size = np.array([cfg.org_h, cfg.org_w])
         resize_img_size = np.array([cfg.resize_h, cfg.resize_w])
@@ -164,7 +165,7 @@ class Anchorless3DLanedetector(nn.Module):
         # print("checking the shape of grid", grid.shape)
         # print("checking the shape of the input", x.shape)
 
-        x_proj = F.grid_sample(x, grid)
+        x_proj = F.grid_sample(x, grid, align_corners= self.cfg.allign_corners)
         # print("x_proj.shape: ", x_proj.shape)
 
         embedding_features = self.embedding(x_proj)

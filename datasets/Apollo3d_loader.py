@@ -55,8 +55,6 @@ def configure_worker(worker_id):
     Configures the worker to use the correct affinity.
     '''
     worker_info = torch.utils.data.get_worker_info()
-    # print("I was here")
-    # print(worker_info)
     if worker_info is None:
         worker_id = 0
         num_workers = 1
@@ -65,9 +63,7 @@ def configure_worker(worker_id):
         num_workers = worker_info.num_workers
 
     worker_pid = os.getpid()
-    # print("I was here too")
     dataset = worker_info.dataset
-    # print("printing amd checking", dataset.validation)
     avail_cpus = get_affinity(worker_pid)
     validation_term = 1 if dataset.validation else 0  # support two loaders at a time
     offset = len(avail_cpus) - (num_workers * 2) # keep the first few cpus free (it seemed they were faster, important for BackgroundGenerator)
@@ -106,7 +102,6 @@ class BatchDataLoader:
             workers_seen.add(worker_id)
 
             if current_bs == bs:
-                start = time.time()
                 if self.mode == 'train':
                     collated_batch = self.collate_fn_train(batch)
                 elif self.mode == 'test':
@@ -119,6 +114,9 @@ class BatchDataLoader:
                 workers_seen = set()
 
     def collate_fn_train(self, batch):
+        # for item in batch:
+        #     print("checking the number of elements in batch:",len(item))
+        #     break
         img_data = [item[0] for item in batch]
         img_data = torch.stack(img_data, dim = 0)
         
@@ -160,7 +158,11 @@ class BatchDataLoader:
         #     return [img_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data, gt_image_full_path, idx_data]
     
     def collate_fn_val(self, batch):
-    
+        # print("How can i be here for train")
+        # for item in batch:
+        #     print("fucks sake i shoudl not be here:", len(item))
+        #     break
+
         img_data = [item[0] for item in batch]
         img_data = torch.stack(img_data, dim = 0)
         
@@ -194,7 +196,7 @@ class BatchDataLoader:
         worker_idx = [item[11] for item in batch]
         
         return [img_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data, gt_image_full_path, idx_data, worker_idx]
-                    # 0      1                2                   3                    4                    5                 6                 7                 8          9              10                  11              12
+                    # 0      1                          2                   3                    4             5                 6                 7                 8          9              10                  11              12
 
     def __len__(self):
         return len(self.loader)
@@ -760,10 +762,10 @@ if __name__ == "__main__":
     
     cfgs = Config.fromfile(config_path)
 
-    dataset = Apollo3d_loader(data_root, data_splits, shuffle = False, cfg = cfgs, phase = 'test')
+    dataset = Apollo3d_loader(data_root, data_splits, shuffle = False, cfg = cfgs, phase = 'train')
     loader = DataLoader(dataset, batch_size=None, num_workers=cfgs.batch_size, collate_fn= None, prefetch_factor=1, persistent_workers=True, worker_init_fn= configure_worker)
     
-    loader = BatchDataLoader(loader, batch_size = cfgs.batch_size, mode = 'test')
+    loader = BatchDataLoader(loader, batch_size = cfgs.batch_size, mode = 'train')
     loader = BackgroundGenerator(loader)
 
     start_point = time.time()
@@ -774,7 +776,7 @@ if __name__ == "__main__":
         print("time taken to process one batch{:f}".format(time.time() - start_point))
         print(data[0].shape)
         print(data[7].shape)
-        print(data[8].shape)
+        print(data[8])
         
         start_point = time.time()
 
