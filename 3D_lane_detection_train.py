@@ -28,6 +28,7 @@ from anchorless_detector import load_3d_model
 from evaluate import Apollo_3d_eval
 import gc
 from torchvision import transforms
+import matplotlib.pyplot as plt
 
 def classification_regression_loss(L1loss, BCEloss, CEloss, rho_pred, rho_gt, delta_z_pred, delta_z_gt, cls_pred, cls_gt, phi_pred, phi_gt ):
         """"
@@ -238,12 +239,12 @@ def discriminative_loss(embedding, seg_gt, cfg, device = None):
 
     return loss_embedding
 
-def visualization(cfg, model2d, model3d, vis_loader, p, device):
+def visualization(cfg, model2d, model3d, vis_loader, p, device, epoch, itr):
 
     print(">>>>>>>Visualizing<<<<<<<<")
     vis = Visualization(cfg.org_h, cfg.org_w, cfg.resize_h, cfg.resize_w, cfg.K, cfg.ipm_w, cfg.ipm_h, cfg.crop_y, cfg.top_view_region)
     
-    model3d.train()
+    model3d.eval()
 
     if cfg.visualize_activations: 
         model_weights = []
@@ -296,18 +297,14 @@ def visualization(cfg, model2d, model3d, vis_loader, p, device):
             vis_out_project = vis_out["project_out"]
             
             if cfg.visualize_activations:
-
                 conv_layer_reg = conv_layers[:4]
                 conv_layer_embed = conv_layers[4:]
                 
                 #activations of regression layer
-                results_reg = [conv_layer_reg[0](vis_out_project[0:1,:,:,:])]
+                results_reg = [conv_layer_reg[0](vis_out_project[0:1,:,:,:])]  #only first sample of the batch is used for activation vis
                 for i in range(1, len(conv_layer_reg)):
                     results_reg.append(conv_layer_reg[i](results_reg[-1]))
                 outputs_reg = results_reg                    
-                
-                # for feature_map in outputs_reg:
-                    # print(feature_map.shape)
                 
                 #activations of embedding layer
                 results_embed = [conv_layer_embed[0](vis_out_project[0:1,:,:,:])]
@@ -330,14 +327,31 @@ def visualization(cfg, model2d, model3d, vis_loader, p, device):
                     gray_scale = torch.sum(feature_map,0)
                     gray_scale = gray_scale / feature_map.shape[0]
                     embed_processed.append(gray_scale.data.cpu().numpy())
+            
+                reg_activation_fig = plt.figure(figsize=(30, 50))
+                for i in range(len(reg_processed)):
+                    a = reg_activation_fig.add_subplot(2, 2, i+1)
+                    imgplot = plt.imshow(reg_processed[i])
+                    a.axis("off")
+                    a.set_title(str(i), fontsize=30)
                 
-                print(embed_processed[0].dtype)
+                embed_activation_fig = plt.figure(figsize=(30, 50))
+                for i in range(len(embed_processed)):
+                    a = embed_activation_fig.add_subplot(1,2 , i+1)
+                    imgplot = plt.imshow(embed_processed[i])
+                    a.axis("off")
+                    a.set_title(str(i), fontsize=30)
                 
-                image = reg_processed[0]
-                image = image.astype('uint8')
+                reg_activation_fig = mplfig_to_npimage(reg_activation_fig)
+                embed_activation_fig = mplfig_to_npimage(embed_activation_fig)
 
-                cv2.imwrite("activation_check.png", image)
+                wandb.log({"Embedding Activations_" :wandb.Image(embed_activation_fig)})
+                wandb.log({"Regression pathway embeddings_" :wandb.Image(reg_activation_fig)})
+                
+                del embed_activation_fig
+                del reg_activation_fig
 
+                gc.collect()
 
             vis_rho_pred = vis_out_pathway2[:,0,...] #---> (b,13,8)
             vis_delta_z_pred = vis_out_pathway2[:,1,...] #--> (b,13,8)
@@ -421,12 +435,12 @@ def visualization(cfg, model2d, model3d, vis_loader, p, device):
                 #TODO: increase the number of visualization images to be displayed and retain the step at per epoch
                 break #visualize only one sample for now per vis iteration
             
-            if vis_itr == 2: 
-                break
+            
+            break
 
 def validate(model2d, model3d, val_loader, cfg, p, device):
     
-    model3d.train()
+    model3d.eval()
     
     print(">>>>>>>Validating<<<<<<<<")
     val_loss = 0.0
@@ -586,11 +600,13 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
         model3d.train()
 
     for itr, data in enumerate(train_loader):
+        
         batch_load_time = multitimings.end('batch_load')
         print(f"Got new batch: {batch_load_time:.2f}s - training iteration: {itr}")
 
         #flag for train log and validation loop
         ## TODO: change it to per epoch not iteration
+        
         should_log_train = (itr+1) % cfg.train_log_frequency == 0 
         should_run_valid = (itr+1) % cfg.val_frequency == 0
         should_run_vis = (itr+1) % cfg.vis_frequency == 0
@@ -627,7 +643,7 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
             o = model2d(batch["input_image"].float())
             
             
-            ######################### To check for the inference from the model while it trains
+            # ######################## To check for the inference from the model while it trains
     
             # images = []
             # mapping = {(0, 0, 0): 0, (255, 255, 255): 1}
@@ -644,7 +660,10 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
             #         pred_image[:,pred_mask_i == k] = torch.tensor(rev_mapping[k]).byte().view(3,1)
             #         pred_img = pred_image.permute(1,2,0).numpy()
                     
-            #     org_image = cv2.imread(batch['img_full_path'][i])    
+            #     org_image = cv2.imread(batch['img_full_path'][i]) 
+                
+            #     print("checking the sghape og original image",org_image.shape)
+
             #     pred_img = cv2.resize(pred_img, (org_image.shape[1], org_image.shape[0]), interpolation=cv2.INTER_NEAREST)
                 
             #     vis_img = cv2.addWeighted(org_image,0.5, pred_img,0.5,0)
@@ -689,7 +708,11 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
             print("==>overall loss::", overall_loss.item())
         
         with Timing(timings, "backward_pass"):        
-            overall_loss.backward()
+            if cfg.fix_branch and epoch <10 :
+                print("Training only Embeddings first ====>")
+                loss1.backward()
+            else: 
+                overall_loss.backward()
         
         with Timing(timings, 'clip_gradients'):
             torch.nn.utils.clip_grad_norm_(model3d.parameters(), cfg.grad_clip)
@@ -746,13 +769,13 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
                     checkpoint_save_path = os.path.join(checkpoints_dir, checkpoint_file_name)
                     torch.save(model3d.state_dict(), checkpoint_save_path)
 
-                wandb.log({'Validation_loss': val_avg_loss,}, commit=False)
+                wandb.log({'Validation_loss': val_avg_loss,})
                 scheduler2.step(val_avg_loss.item())                
 
         #vis loop
         if should_run_vis:
             with Timing(timings, "visualize predictions and ground truth"):
-                visualization(cfg, model2d, model3d, vis_loader, p, device)
+                visualization(cfg, model2d, model3d, vis_loader, p, device, epoch, itr)
 
         #TODO: add the condition for e2e
         model3d.train()

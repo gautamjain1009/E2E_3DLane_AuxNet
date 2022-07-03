@@ -48,7 +48,7 @@ aggregator = dict(type= "SCNN")
 heads = dict(type = 'PlainDecoder')
 
 #TODO: move this to CLI args later
-pretrained_2dmodel_path = "/home/ims-robotics/Documents/gautam/E2E_3DLane_AuxNet/nets/checkpoints/RGB_b16_r18_scnn_binary_2dLane_16_June_0.007081503048539162_98.pth"
+pretrained_2dmodel_path = "/home/ims-robotics/Documents/gautam/E2E_3DLane_AuxNet/nets/checkpoints/RGB_b16_r18_scnn_binary_2dLane_16_June_0.006351555231958628_90.pth"
 lane_pred_dir = "/home/ims-robotics/Documents/gautam/E2E_3DLane_AuxNet/nets/3dlane_detection"
 
 """
@@ -122,7 +122,7 @@ K = np.array([[2015., 0., 960.],
 # top_view_region = np.array([[-10, 85], [10, 85], [-10, 5], [10, 5]])
 top_view_region = np.array([[-10, 103], [10, 103], [-10, 3], [10, 3]])
 batch_norm = True #bev encoder
-embedding_dim = 4
+embedding_dim = 5
 
 ##### Loss function params 
 ### regression and classification offsets and angles
@@ -133,7 +133,7 @@ n_bins = 10
 #TODO: Change the values as per the Gen_net paper
 delta_pull = 0.1 ## delta_v 
 delta_push = 3.0 ## delta_d 
-embed_dim = 4
+embed_dim = 5
 
 """""
 BIG BIG BIG NOTE: Is that the spatial size of ipm and BEV IPM projection are different?
@@ -142,19 +142,19 @@ May be to process the masks for the section 3.2 I need not multiply the ipm_h an
 """
 
 # ###logging params
-date_it = "4_July_"
-train_run_name = "Trainmode_Anchorless3DLane_norm_b8_50:50weights_16X1nonoverlap_CornFalse_0.001_0.1pull_clip20" + date_it
+date_it = "7_July_"
+train_run_name = date_it +  "Anchorless3DLane_norm_b8_50:50weights_16X1nonoverlap_CornFalse_0.001_0.1pullband_clip20_fixembed=5" 
 val_frequency = 500
-vis_frequency = 5
+vis_frequency = 100
 train_log_frequency = 10
 
 #if the predictions needs to be normalized
 normalize = True
 
 # #Hyperparams
-epochs = 100
-batch_size = 1
-num_workers = 1
+epochs = 50
+batch_size = 8
+num_workers = 8
 l2_lambda = 1e-4
 lr = 0.001
 lrs_cd = 0
@@ -170,8 +170,10 @@ w_clustering_Loss = 0.5
 w_classification_Loss = 0.5
 threshold_score = 0.3
 allign_corners = False
-grad_clip = 20 #TODO add a coindition for inf
+grad_clip = 10 #TODO add a coindition for inf
 visualize_activations = True
+fix_branch = True
+
 """
 NOTE:: NOTE:: NOTE:: NOTE::
 In the end I would say that, yes this method of mine is one camera based. Just take the example of comma and decode

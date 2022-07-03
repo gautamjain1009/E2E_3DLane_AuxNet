@@ -176,6 +176,7 @@ def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, 
         with Timing(timings, "inputs_to_GPU"):
             gt_mask = data['binary_mask'].to(device).long()
             input_img = data['img'].to(device)
+            print("Checking the shape of the input iamge to the mopdel", input_img.shape)
             
         with Timing(timings,"forward_pass"):
             seg_out = model(input_img)

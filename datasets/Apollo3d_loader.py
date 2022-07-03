@@ -427,10 +427,7 @@ class CalculateDistanceAngleOffests(object):
         H_g2im = homography_g2im(gt_cam_pitch, gt_cam_height, self.K)
         H_im2ipm = np.linalg.inv(np.matmul(self.H_crop, np.matmul(H_g2im, self.H_ipm2g)))
 
-        # print("Checking the shape of original image: ", img.shape)
-
         img = cv2.warpPerspective(img, self.H_crop, (self.resize_w, self.resize_h))
-        # print("Checking the shape of cropped image: ", img.shape)     
 
         # img = img.astype(np.float) / 255
         im_ipm = cv2.warpPerspective(img, H_im2ipm, (self.ipm_w, self.ipm_h))
@@ -521,7 +518,7 @@ class GeneratePertile():
 
     def generategt_pertile(self, gt_lanes, img , gt_cam_height, gt_cam_pitch):
         bev_projected_lanes, dz_dict = self.calculate_bev_projection.draw_bevlanes(gt_lanes, img,  gt_cam_height, gt_cam_pitch, self.color_list) ## returns an image array of gt lanes projected on BEV
-        # cv2.imwrite("/home/gautam/Thesis/E2E_3DLane_AuxNet/datasets/complete_lines_test1001.jpg" , bev_projected_lanes)
+        # cv2.imwrite("complete_lines_test1001.jpg" , bev_projected_lanes)
 
         ##init gt arrays for rho, phi and classification score and delta_z
         grid_x = int(bev_projected_lanes.shape[0]/self.tile_size)
@@ -700,13 +697,6 @@ class Apollo3d_loader(IterableDataset):
 
             img = cv2.imread(img_path)
             
-            #resize
-            img = cv2.resize(img, (self.cfg.resize_h, self.cfg.resize_w), interpolation=cv2.INTER_AREA)
-
-            if self.phase == "train": #training only
-                img, aug_mat = data_aug_rotate(img)
-                batch.update({"aug_mat": torch.from_numpy(aug_mat)})
-
             gt_camera_height = np.array(gtdata['cam_height'])
             gt_camera_pitch =np.array(gtdata['cam_pitch'])
 
@@ -732,11 +722,17 @@ class Apollo3d_loader(IterableDataset):
             batch.update({'gt_phi':torch.from_numpy(gt_lateral_angleoffset)})
             batch.update({'gt_clscore':torch.from_numpy(gt_cls_score)})
             batch.update({'gt_lane_class':torch.from_numpy(gt_lane_class)})
-            
+
+            #resize
+            #TODO: NOTE: DISCLAIMER: to check if i shoudl send the full image for generating gt or this is okay
+            img = cv2.resize(img, (self.cfg.resize_w, self.cfg.resize_h), interpolation=cv2.INTER_AREA)
+
+            if self.phase == "train": #training only
+                img, aug_mat = data_aug_rotate(img)
+                batch.update({"aug_mat": torch.from_numpy(aug_mat)})
             #convert the image to tensor
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB) #( BGR -> RGB)
             img = transforms.ToTensor()(img)
-            
             img = transforms.Normalize(mean= self.cfg.img_mean, std=self.cfg.img_std)(img)
             batch.update({"image":img})
             
@@ -746,8 +742,6 @@ class Apollo3d_loader(IterableDataset):
         # [img_data, aug_mat_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data, gt_image_full_path, idx_data]
             if self.phase == "train":
                 yield batch["image"], batch["aug_mat"], batch["gt_height"], batch["gt_pitch"], batch["gt_lanelines"], batch["gt_rho"], batch["gt_phi"], batch["gt_clscore"], batch["gt_lane_class"], batch["gt_delta_z"], batch["img_full_path"], batch["idx"], batch["worker_id"]
-                #           0           1                   2                   3                       4               5                   6               7                           8                   9                   10                      11              12              
-            #           0           1                   2                   3                       4               5                   6               7                           8                   9                   10                      11              12              
                 #           0           1                   2                   3                       4               5                   6               7                           8                   9                   10                      11              12              
             else: 
                 yield batch["image"], batch["gt_height"], batch["gt_pitch"], batch["gt_lanelines"], batch["gt_rho"], batch["gt_phi"], batch["gt_clscore"], batch["gt_lane_class"], batch["gt_delta_z"], batch["img_full_path"], batch["idx"], batch["worker_id"]
@@ -774,9 +768,11 @@ if __name__ == "__main__":
         batch_time = time.time()
         print("processing batch:",i)
         print("time taken to process one batch{:f}".format(time.time() - start_point))
-        print(data[0].shape)
-        print(data[7].shape)
+        print(data[1].shape)
+        print(data[2].shape)
+        print("image::",data[0].shape)
         print(data[8])
+        print(data[8].shape)
         
         start_point = time.time()
 
