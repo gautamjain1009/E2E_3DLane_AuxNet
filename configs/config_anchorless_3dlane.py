@@ -1,5 +1,5 @@
 import numpy as np 
-
+import torch
 #TOOD: remove it later and verify it is of no use
 
 dataset_dir = "/home/gautam/e2e/lane_detection/3d_approaches/3d_dataset/Apollo_Sim_3D_Lane_Release"
@@ -142,14 +142,19 @@ May be to process the masks for the section 3.2 I need not multiply the ipm_h an
 """
 
 # ###logging params
-date_it = "7_July_"
-train_run_name = date_it +  "Anchorless3DLane_norm_b8_50:50weights_16X1nonoverlap_CornFalse_0.001_0.1pullband_clip20_fixembed=5" 
+date_it = "9_July_"
+train_run_name = date_it +  "Anchorless3DLane_norm_b8_YES0.001weights_16X1nonoverlap_CornFalse_0.001_0.1pullband_noclip_fixbranch_embed5" 
 val_frequency = 500
 vis_frequency = 100
 train_log_frequency = 10
 
 #if the predictions needs to be normalized
 normalize = True
+enable_clip = False
+allign_corners = False
+visualize_activations = True
+fix_branch = True
+weighted_loss = False
 
 # #Hyperparams
 epochs = 50
@@ -166,13 +171,16 @@ prefetch_factor = 2
 bg_weight = 0.4 #used in the loss function to reduce the importance of one class in tusimple
 
 #TODO: try different combination later as per the gradients and in the end try to balance them
-w_clustering_Loss = 0.5
-w_classification_Loss = 0.5
+w_clustering_Loss = 1
+w_classification_Loss = 0.1
 threshold_score = 0.3
-allign_corners = False
-grad_clip = 10 #TODO add a coindition for inf
-visualize_activations = True
-fix_branch = True
+
+if enable_clip:
+    grad_clip = 10
+else: 
+    grad_clip = torch.inf
+
+fix_branch_epoch = 20
 
 """
 NOTE:: NOTE:: NOTE:: NOTE::

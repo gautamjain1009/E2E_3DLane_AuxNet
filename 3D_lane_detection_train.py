@@ -345,8 +345,8 @@ def visualization(cfg, model2d, model3d, vis_loader, p, device, epoch, itr):
                 reg_activation_fig = mplfig_to_npimage(reg_activation_fig)
                 embed_activation_fig = mplfig_to_npimage(embed_activation_fig)
 
-                wandb.log({"Embedding Activations_" :wandb.Image(embed_activation_fig)})
-                wandb.log({"Regression pathway embeddings_" :wandb.Image(reg_activation_fig)})
+                wandb.log({"Embedding Activations_" :wandb.Image(embed_activation_fig)}, commit = False)
+                wandb.log({"Regression pathway embeddings_" :wandb.Image(reg_activation_fig)}, commit = False)
                 
                 del embed_activation_fig
                 del reg_activation_fig
@@ -425,8 +425,8 @@ def visualization(cfg, model2d, model3d, vis_loader, p, device, epoch, itr):
                 vis_gt_numpy_fig = cv2.cvtColor(gt_numpy_fig, cv2.COLOR_BGR2RGB)
                 vis_pred_numpy_fig = cv2.cvtColor(pred_numpy_fig, cv2.COLOR_BGR2RGB)
 
-                wandb.log({"validate Predictions":wandb.Image(vis_pred_numpy_fig)})
-                wandb.log({"validate GT":wandb.Image(vis_gt_numpy_fig)})
+                wandb.log({"validate Predictions":wandb.Image(vis_pred_numpy_fig)}, commit = False)
+                wandb.log({"validate GT":wandb.Image(vis_gt_numpy_fig)}, commit = False)
                 
                 del vis_gt_numpy_fig
                 del vis_pred_numpy_fig
@@ -703,15 +703,19 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
             print("==>discriminative loss::", loss1.item())
             print("==>classification loss::", loss2.item())
 
-            overall_loss = cfg.w_clustering_Loss * loss1 + cfg.w_classification_Loss * loss2
-            # overall_loss = loss1 + loss2
-            print("==>overall loss::", overall_loss.item())
-        
-        with Timing(timings, "backward_pass"):        
-            if cfg.fix_branch and epoch <10 :
+            if cfg.weighted_loss:
+                overall_loss = cfg.w_clustering_Loss * loss1 + cfg.w_classification_Loss * loss2
+            else:
+                overall_loss = loss1 + loss2
+
+        with Timing(timings, "backward_pass"):                     
+            if cfg.fix_branch and epoch < cfg.fix_branch_epoch :
                 print("Training only Embeddings first ====>")
-                loss1.backward()
+                freeze_network(model3d, "bev_encoder")
+                overall_loss.backward()
             else: 
+                print("Training regression branch ====>")
+                freeze_network(model3d, "embedding")
                 overall_loss.backward()
         
         with Timing(timings, 'clip_gradients'):
@@ -722,7 +726,7 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
 
         batch_loss1 = loss1.detach().cpu()/cfg.batch_size
         batch_loss2 = loss2.detach().cpu()/cfg.batch_size
-        batch_loss = overall_loss.detach().cpu() / cfg.batch_size
+        batch_loss = overall_loss.detach().cpu() / cfg.batch_size 
         train_batch_time= multitimings.end('train_batch')
 
         #reporting model fps
@@ -732,6 +736,32 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
         tr_loss1 += batch_loss1
         tr_loss2 += batch_loss2
         tr_loss += batch_loss
+
+        # eval loop
+        if should_run_valid:
+            with Timing(timings, "validate loop"):
+                eval_stats, val_avg_loss = validate(model2d, model3d, val_loader, cfg, p, device) 
+
+                    #save the best model
+                if eval_stats[0] > best_fmeasure:
+                    best_fmeasure = eval_stats[0]
+
+                    #TODO: alter this model checkpointing: Trained e2e
+                    print(">>>>>>> Creating model Checkpoint <<<<<<<")
+                    checkpoint_file_name = cfg.train_run_name + args.data_split + str(val_avg_loss.item()) + "epoch_" + str(epoch+1) + ".pth"
+                    checkpoint_save_path = os.path.join(checkpoints_dir, checkpoint_file_name)
+                    torch.save(model3d.state_dict(), checkpoint_save_path)
+                
+            wandb.log({'Validation_loss': val_avg_loss}, commit = False)
+            scheduler2.step(val_avg_loss.item())  
+            #TODO: add the condition for e2e
+            model3d.train()              
+            
+        #vis loop
+        if should_run_vis:
+            with Timing(timings, "visualize predictions and ground truth"):
+                visualization(cfg, model2d, model3d, vis_loader, p, device, epoch, itr)
+            model3d.train()
 
         if should_log_train:
             running_loss1 = tr_loss1.item()/ cfg.train_log_frequency
@@ -753,32 +783,6 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
             tr_loss  = 0.0
             tr_loss1 = 0.0
             tr_loss2 = 0.0
-        
-        # eval loop
-        if should_run_valid:
-            with Timing(timings, "validate loop"):
-                eval_stats, val_avg_loss = validate(model2d, model3d, val_loader, cfg, p, device) 
-
-                    #save the best model
-                if eval_stats[0] > best_fmeasure:
-                    best_fmeasure = eval_stats[0]
-
-                    #TODO: alter this model checkpointing: Trained e2e
-                    print(">>>>>>> Creating model Checkpoint <<<<<<<")
-                    checkpoint_file_name = cfg.train_run_name + args.data_split + str(val_avg_loss.item()) + "epoch_" + str(epoch+1) + ".pth"
-                    checkpoint_save_path = os.path.join(checkpoints_dir, checkpoint_file_name)
-                    torch.save(model3d.state_dict(), checkpoint_save_path)
-
-                wandb.log({'Validation_loss': val_avg_loss,})
-                scheduler2.step(val_avg_loss.item())                
-
-        #vis loop
-        if should_run_vis:
-            with Timing(timings, "visualize predictions and ground truth"):
-                visualization(cfg, model2d, model3d, vis_loader, p, device, epoch, itr)
-
-        #TODO: add the condition for e2e
-        model3d.train()
 
     #reporting epoch train time 
     print(f"Epoch {epoch+1} done! Took {pprint_seconds(time.time()- start_point)}")
@@ -796,6 +800,12 @@ def image_to_tensor(img):
     img = transforms.Normalize(mean= img_mean, std=img_std)(img)
 
     return img
+
+def freeze_network(model, layer):
+    for name, p in model.named_parameters():
+        # freeze the regression layers
+        if layer in name:
+            p.requires_grad = False
 
 if __name__ == "__main__":
     cuda = torch.cuda.is_available()
@@ -899,45 +909,46 @@ if __name__ == "__main__":
 
     #TODO: remove it later when e2e 
     model2d.train()
-
-    ################# to Enable to check the inference of the trained 2d model ##################
-    # # image_tusimple = cv2.imread("/home/gautam/Thesis/E2E_3DLane_AuxNet/vis_test/8.jpg")
-    # image_apollo = cv2.imread("/home/ims-robotics/Documents/gautam/E2E_3DLane_AuxNet/dog.jpg")
     
-    # image = image_to_tensor(image_apollo)
+
+    # ################# to Enable to check the inference of the trained 2d model ##################
+    # # # image_tusimple = cv2.imread("/home/gautam/Thesis/E2E_3DLane_AuxNet/vis_test/8.jpg")
+    # # image_apollo = cv2.imread("/home/ims-robotics/Documents/gautam/E2E_3DLane_AuxNet/dog.jpg")
     
-    # image = image.unsqueeze(0)
-    # image = image.float().to(device)
-    # # TODO: test here
+    # # image = image_to_tensor(image_apollo)
+    
+    # # image = image.unsqueeze(0)
+    # # image = image.float().to(device)
+    # # # TODO: test here
 
-    # out = model2d(image)
+    # # out = model2d(image)
 
-    # preds = torch.argmax(out[0,:,:,:], 0)
-    # print(preds)
-    # print(torch.unique(preds))
-
-    # #  print(preds.shape)
+    # # preds = torch.argmax(out[0,:,:,:], 0)
+    # # print(preds)
     # # print(torch.unique(preds))
-    # #save the binary predicted mask using opencv 
-    # mapping = {(0, 0, 0): 0, (255, 255, 255): 1}
-    # rev_mapping = {mapping[k]: k for k in mapping}
-    # # for i in range(cfg.batch_size):
 
-    # # pred_mask_i = preds[0, :, :, :] #--- > (2,h,W)
+    # # #  print(preds.shape)
+    # # # print(torch.unique(preds))
+    # # #save the binary predicted mask using opencv 
+    # # mapping = {(0, 0, 0): 0, (255, 255, 255): 1}
+    # # rev_mapping = {mapping[k]: k for k in mapping}
+    # # # for i in range(cfg.batch_size):
+
+    # # # pred_mask_i = preds[0, :, :, :] #--- > (2,h,W)
     
-    # # pred_mask_i = torch.argmax(pred_mask_i,0) #--- > (h,W)
+    # # # pred_mask_i = torch.argmax(pred_mask_i,0) #--- > (h,W)
     
-    # pred_image = torch.zeros(3,preds.size(0), preds.size(1), dtype = torch.uint8)
+    # # pred_image = torch.zeros(3,preds.size(0), preds.size(1), dtype = torch.uint8)
     
-    # for k in rev_mapping:
-    #     pred_image[:,preds == k] = torch.tensor(rev_mapping[k]).byte().view(3,1)
-    #     pred_img = pred_image.permute(1,2,0).numpy()
+    # # for k in rev_mapping:
+    # #     pred_image[:,preds == k] = torch.tensor(rev_mapping[k]).byte().view(3,1)
+    # #     pred_img = pred_image.permute(1,2,0).numpy()
         
-    # pred_img = cv2.resize(pred_img, (1920, 1080), interpolation=cv2.INTER_NEAREST)
+    # # pred_img = cv2.resize(pred_img, (1920, 1080), interpolation=cv2.INTER_NEAREST)
 
-    # vis_img = cv2.addWeighted(image_apollo,0.5, pred_img,0.5,0)
-    # cv2.imwrite("inferapollo.jpg", vis_img)
-    #########################################################################################
+    # # vis_img = cv2.addWeighted(image_apollo,0.5, pred_img,0.5,0)
+    # # cv2.imwrite("inferapollo.jpg", vis_img)
+    # #########################################################################################
 
     #general loss functions
     L1loss= nn.L1Loss().to(device)
