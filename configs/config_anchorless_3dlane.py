@@ -17,8 +17,8 @@ dataset_dir = "/home/gautam/e2e/lane_detection/3d_approaches/3d_dataset/Apollo_S
 img_height = 360
 img_width = 480
 cut_height = 160
-ori_img_h = 720
-ori_img_w = 1280
+# ori_img_h = 720
+# ori_img_w = 1280
 
 # """
 # training params
@@ -91,8 +91,11 @@ ipm_w = 128 * 2
 
 augmentation = True
 
-img_mean = [103.939, 116.779, 123.68]
-img_std = [1., 1., 1.]
+# img_mean = [103.939, 116.779, 123.68]
+# img_std = [1., 1., 1.]
+
+img_mean = [0.485, 0.456, 0.406] 
+img_std = [0.229, 0.224, 0.225]
 
 no_centerline = True
 
@@ -119,7 +122,7 @@ K = np.array([[2015., 0., 960.],
 # top_view_region = np.array([[-10, 85], [10, 85], [-10, 5], [10, 5]])
 top_view_region = np.array([[-10, 103], [10, 103], [-10, 3], [10, 3]])
 batch_norm = True #bev encoder
-embedding_dim = 4 
+embedding_dim = 4
 
 ##### Loss function params 
 ### regression and classification offsets and angles
@@ -142,7 +145,7 @@ May be to process the masks for the section 3.2 I need not multiply the ipm_h an
 date_it = "4_July_"
 train_run_name = "Trainmode_Anchorless3DLane_norm_b8_50:50weights_16X1nonoverlap_CornFalse_0.001_0.1pull_clip20" + date_it
 val_frequency = 500
-vis_frequency = 100
+vis_frequency = 5
 train_log_frequency = 10
 
 #if the predictions needs to be normalized
@@ -150,8 +153,8 @@ normalize = True
 
 # #Hyperparams
 epochs = 100
-batch_size = 8
-num_workers = 8
+batch_size = 1
+num_workers = 1
 l2_lambda = 1e-4
 lr = 0.001
 lrs_cd = 0
@@ -167,7 +170,8 @@ w_clustering_Loss = 0.5
 w_classification_Loss = 0.5
 threshold_score = 0.3
 allign_corners = False
-grad_clip = 20
+grad_clip = 20 #TODO add a coindition for inf
+visualize_activations = True
 """
 NOTE:: NOTE:: NOTE:: NOTE::
 In the end I would say that, yes this method of mine is one camera based. Just take the example of comma and decode

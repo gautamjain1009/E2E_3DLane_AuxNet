@@ -27,7 +27,7 @@ from utils.helper_functions import *
 from anchorless_detector import load_3d_model
 from evaluate import Apollo_3d_eval
 import gc
-
+from torchvision import transforms
 
 def classification_regression_loss(L1loss, BCEloss, CEloss, rho_pred, rho_gt, delta_z_pred, delta_z_gt, cls_pred, cls_gt, phi_pred, phi_gt ):
         """"
@@ -179,13 +179,14 @@ def discriminative_loss(embedding, seg_gt, cfg, device = None):
     seg_gt = lane class or background
     
     return:
-    clustering loss/ clustering loss (aka), push and pull loss
+    clustering loss/ clustering loss (aka), push, pull and regularize loss
     """
     batch_size = embedding.shape[0]
 
     pull_loss = torch.tensor(0, dtype=embedding.dtype, device=embedding.device) #(var)
     push_loss = torch.tensor(0, dtype=embedding.dtype, device=embedding.device) #(push)
-
+    reg_loss = torch.tensor(0, dtype=embedding.dtype, device=embedding.device)
+    
     for b in range(embedding.shape[0]):
         embedding_b = embedding[b] # (embed_dim, H, W)
         seg_gt_b = seg_gt[b]
@@ -199,6 +200,7 @@ def discriminative_loss(embedding, seg_gt, cfg, device = None):
             _zero = torch.zeros_like(_nonsense)
             pull_loss = pull_loss + _nonsense * _zero
             push_loss = push_loss + _nonsense * _zero
+            reg_loss = reg_loss + _nonsense * _zero
             continue
 
         centroid_mean = []
@@ -227,10 +229,13 @@ def discriminative_loss(embedding, seg_gt, cfg, device = None):
             # divided by two for double calculated loss above, for implementation convenience
             push_loss = push_loss + torch.sum(F.relu(-dist + cfg.delta_push)**2) / (num_lanes * (num_lanes-1)) / 2
 
+        reg_loss = reg_loss + torch.mean(torch.norm(centroid_mean, dim=1)) #not used in the semi-local 3d lanenet
+
     pull_loss = pull_loss / batch_size
     push_loss = push_loss / batch_size
+    reg_loss = reg_loss / batch_size    
+    loss_embedding = pull_loss + push_loss + reg_loss
 
-    loss_embedding = pull_loss + push_loss
     return loss_embedding
 
 def visualization(cfg, model2d, model3d, vis_loader, p, device):
@@ -239,6 +244,27 @@ def visualization(cfg, model2d, model3d, vis_loader, p, device):
     vis = Visualization(cfg.org_h, cfg.org_w, cfg.resize_h, cfg.resize_w, cfg.K, cfg.ipm_w, cfg.ipm_h, cfg.crop_y, cfg.top_view_region)
     
     model3d.train()
+
+    if cfg.visualize_activations: 
+        model_weights = []
+        conv_layers = []
+        model_children = list(model3d.children())
+        # print(model_children)
+        counter =0 
+        for i in range(len(model_children)):
+            if type(model_children[i]) == nn.Conv2d:
+                counter+=1
+                model_weights.append(model_children[i].weight)
+                conv_layers.append(model_children[i])
+            elif type(model_children[i]) == nn.Sequential:
+                for child in model_children[i].children():
+                    # print(type(child))
+                    if type(child) == nn.Conv2d:
+                        counter+=1
+                        model_weights.append(child.weight)
+                        conv_layers.append(child)
+        # print(conv_layers)
+
     with torch.no_grad():
         for vis_itr, vis_data in enumerate(vis_loader):
             vis_batch = {}
@@ -267,6 +293,51 @@ def visualization(cfg, model2d, model3d, vis_loader, p, device):
             
             vis_out_pathway1 = vis_out["embed_out"]
             vis_out_pathway2 = vis_out["bev_out"] #---(N, 4, H, W)
+            vis_out_project = vis_out["project_out"]
+            
+            if cfg.visualize_activations:
+
+                conv_layer_reg = conv_layers[:4]
+                conv_layer_embed = conv_layers[4:]
+                
+                #activations of regression layer
+                results_reg = [conv_layer_reg[0](vis_out_project[0:1,:,:,:])]
+                for i in range(1, len(conv_layer_reg)):
+                    results_reg.append(conv_layer_reg[i](results_reg[-1]))
+                outputs_reg = results_reg                    
+                
+                # for feature_map in outputs_reg:
+                    # print(feature_map.shape)
+                
+                #activations of embedding layer
+                results_embed = [conv_layer_embed[0](vis_out_project[0:1,:,:,:])]
+                for i in range(1, len(conv_layer_embed)):
+                    results_embed.append(conv_layer_embed[i](results_embed[-1]))
+                outputs_embed = results_embed
+
+                # for feature_map in outputs_embed:
+                #     print(feature_map.shape)
+                reg_processed = []
+                for feature_map in outputs_reg:
+                    feature_map = feature_map.squeeze(0)
+                    gray_scale = torch.sum(feature_map,0)
+                    gray_scale = gray_scale / feature_map.shape[0]
+                    reg_processed.append(gray_scale.data.cpu().numpy())
+                    
+                embed_processed = []
+                for feature_map in outputs_embed:
+                    feature_map = feature_map.squeeze(0)
+                    gray_scale = torch.sum(feature_map,0)
+                    gray_scale = gray_scale / feature_map.shape[0]
+                    embed_processed.append(gray_scale.data.cpu().numpy())
+                
+                print(embed_processed[0].dtype)
+                
+                image = reg_processed[0]
+                image = image.astype('uint8')
+
+                cv2.imwrite("activation_check.png", image)
+
 
             vis_rho_pred = vis_out_pathway2[:,0,...] #---> (b,13,8)
             vis_delta_z_pred = vis_out_pathway2[:,1,...] #--> (b,13,8)
@@ -448,7 +519,7 @@ def validate(model2d, model3d, val_loader, cfg, p, device):
                     
                     #Cluster the tile embedding as per lane class
                     # return the tile labels: 0 marked as no lane
-                    val_clustered_tiles = embedding_post_process(val_embedding_b, val_cls_score_pred_b) [0,1,2,3,3]
+                    val_clustered_tiles = embedding_post_process(val_embedding_b, val_cls_score_pred_b)
                     print("check if the num of lanes::",np.unique(val_clustered_tiles))
 
                     # extract points from predictions
@@ -496,7 +567,8 @@ def validate(model2d, model3d, val_loader, cfg, p, device):
 
 def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, scheduler2, L1loss, BCEloss, CEloss, m, p, device,  best_fmeasure, optimizer1 = None, scheduler1 = None):
      #init best measure before the start of the training
-    
+    print(model2d)
+    # print(model2d)
     batch_loss = 0.0 
     tr_loss = 0.0 
     tr_loss1 = 0.0
@@ -537,7 +609,8 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
                         "gt_phi":data[6].to(device).float(),
                         "gt_cls_score":data[7].to(device),
                         "gt_lane_cls":data[8].to(device),
-                        "gt_delta_z":data[9].to(device)
+                        "gt_delta_z":data[9].to(device),
+                        'img_full_path':data[10]
                         })
 
         #TODO: add the condition for camera fix
@@ -551,8 +624,39 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
         
         with Timing(timings, "2d_forward_pass"):
             #forward pass
-            o = model2d(batch["input_image"].contiguous().float())
+            o = model2d(batch["input_image"].float())
             
+            
+            ######################### To check for the inference from the model while it trains
+    
+            # images = []
+            # mapping = {(0, 0, 0): 0, (255, 255, 255): 1}
+            # rev_mapping = {mapping[k]: k for k in mapping}
+            # for i in range(cfg.batch_size):
+
+            #     pred_mask_i = o[i, :, :, :] #--- > (2,h,W)
+                
+            #     pred_mask_i = torch.argmax(pred_mask_i,0) #--- > (h,W)
+                
+            #     pred_image = torch.zeros(3,pred_mask_i.size(0), pred_mask_i.size(1), dtype = torch.uint8)
+
+            #     for k in rev_mapping:
+            #         pred_image[:,pred_mask_i == k] = torch.tensor(rev_mapping[k]).byte().view(3,1)
+            #         pred_img = pred_image.permute(1,2,0).numpy()
+                    
+            #     org_image = cv2.imread(batch['img_full_path'][i])    
+            #     pred_img = cv2.resize(pred_img, (org_image.shape[1], org_image.shape[0]), interpolation=cv2.INTER_NEAREST)
+                
+            #     vis_img = cv2.addWeighted(org_image,0.5, pred_img,0.5,0)
+
+            #     vis_img = cv2.cvtColor(vis_img, cv2.COLOR_BGR2RGB)
+            #     # print(pred_img)
+            #     image_name = 'check_infer_' + str(itr) + '.jpg'
+            #     image_save_path = os.path.join('/home/ims-robotics/Documents/gautam/E2E_3DLane_AuxNet/infer',image_name)
+            #     cv2.imwrite(image_save_path, vis_img)
+            #     # images.append(vis_img)
+                ######################################################################
+                #         
             print("checking if model 2d correct in training")
             a = torch.argmax(o, dim =1)
 
@@ -571,7 +675,6 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
         rho_pred = out_pathway2[:,0,...]
         delta_z_pred = out_pathway2[:,1,...]
         cls_score_pred = out_pathway2[:,2,...]
-        # print(cls_score_pred.round())
         phi_pred = out_pathway2[:,3:,...]
 
         with Timing(timings, "3d_Lane_loss_calculation"):
@@ -657,7 +760,20 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
     #reporting epoch train time 
     print(f"Epoch {epoch+1} done! Took {pprint_seconds(time.time()- start_point)}")
     return best_fmeasure
+
+def image_to_tensor(img):
+    img_mean = [0.485, 0.456, 0.406] 
+    img_std = [0.229, 0.224, 0.225]
+
+    # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    # img = img[160:,:,:]
+    img = cv2.resize(img, (480, 360), interpolation=cv2.INTER_AREA)
     
+    img = transforms.ToTensor()(img)
+    img = transforms.Normalize(mean= img_mean, std=img_std)(img)
+
+    return img
+
 if __name__ == "__main__":
     cuda = torch.cuda.is_available()
     if cuda:
@@ -759,8 +875,47 @@ if __name__ == "__main__":
         wandb.watch(model3d)
 
     #TODO: remove it later when e2e 
-    model2d.eval()
+    model2d.train()
+
+    ################# to Enable to check the inference of the trained 2d model ##################
+    # # image_tusimple = cv2.imread("/home/gautam/Thesis/E2E_3DLane_AuxNet/vis_test/8.jpg")
+    # image_apollo = cv2.imread("/home/ims-robotics/Documents/gautam/E2E_3DLane_AuxNet/dog.jpg")
     
+    # image = image_to_tensor(image_apollo)
+    
+    # image = image.unsqueeze(0)
+    # image = image.float().to(device)
+    # # TODO: test here
+
+    # out = model2d(image)
+
+    # preds = torch.argmax(out[0,:,:,:], 0)
+    # print(preds)
+    # print(torch.unique(preds))
+
+    # #  print(preds.shape)
+    # # print(torch.unique(preds))
+    # #save the binary predicted mask using opencv 
+    # mapping = {(0, 0, 0): 0, (255, 255, 255): 1}
+    # rev_mapping = {mapping[k]: k for k in mapping}
+    # # for i in range(cfg.batch_size):
+
+    # # pred_mask_i = preds[0, :, :, :] #--- > (2,h,W)
+    
+    # # pred_mask_i = torch.argmax(pred_mask_i,0) #--- > (h,W)
+    
+    # pred_image = torch.zeros(3,preds.size(0), preds.size(1), dtype = torch.uint8)
+    
+    # for k in rev_mapping:
+    #     pred_image[:,preds == k] = torch.tensor(rev_mapping[k]).byte().view(3,1)
+    #     pred_img = pred_image.permute(1,2,0).numpy()
+        
+    # pred_img = cv2.resize(pred_img, (1920, 1080), interpolation=cv2.INTER_NEAREST)
+
+    # vis_img = cv2.addWeighted(image_apollo,0.5, pred_img,0.5,0)
+    # cv2.imwrite("inferapollo.jpg", vis_img)
+    #########################################################################################
+
     #general loss functions
     L1loss= nn.L1Loss().to(device)
     #NOTE: verify that BCEWithLogitsLoss for score as We know that when the last layer has acitvations normal loss can be used (numerically stable rn) 
