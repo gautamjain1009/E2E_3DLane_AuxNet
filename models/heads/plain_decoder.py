@@ -14,7 +14,7 @@ class PlainDecoder(nn.Module):
         super(PlainDecoder, self).__init__()
         self.cfg = cfg
 
-        self.dropout = nn.Dropout2d(0.1)
+        # self.dropout = nn.Dropout2d(0.1)
         self.conv8 = nn.Conv2d(cfg.featuremap_out_channel, cfg.num_classes, 1)
 
     def forward(self, x):

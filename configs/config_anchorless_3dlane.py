@@ -1,5 +1,5 @@
 import numpy as np 
-
+import torch
 #TOOD: remove it later and verify it is of no use
 
 dataset_dir = "/home/gautam/e2e/lane_detection/3d_approaches/3d_dataset/Apollo_Sim_3D_Lane_Release"
@@ -17,8 +17,8 @@ dataset_dir = "/home/gautam/e2e/lane_detection/3d_approaches/3d_dataset/Apollo_S
 img_height = 360
 img_width = 480
 cut_height = 160
-ori_img_h = 720
-ori_img_w = 1280
+# ori_img_h = 720
+# ori_img_w = 1280
 
 # """
 # training params
@@ -48,30 +48,37 @@ aggregator = dict(type= "SCNN")
 heads = dict(type = 'PlainDecoder')
 
 #TODO: move this to CLI args later
-pretrained_2dmodel_path = "/home/ims-robotics/Documents/gautam/E2E_3DLane_AuxNet/nets/checkpoints/RGB_b16_r18_scnn_binary_2dLane_16_June_0.007081503048539162_98.pth"
+pretrained_2dmodel_path = "/home/ims-robotics/Documents/gautam/E2E_3DLane_AuxNet/nets/checkpoints/RGB_b16_r18_scnn_binary_2dLane_16_June_0.006351555231958628_90.pth"
 lane_pred_dir = "/home/ims-robotics/Documents/gautam/E2E_3DLane_AuxNet/nets/3dlane_detection"
 
 """
 3d model params (anchorless) for Apollo SIM3D dataset
 """
+tile_size = 16
 # encode_mode ="overlapping"
-# encode_mode = "1x1non"
 # encode_mode = "32x32non"
 encode_mode = "1x1_mix_32X32"
 
+#TODO: optimize a bit more later
 #(channles, K_size, padding, stride)
 if encode_mode == "overlapping":
-    encode_config = [(8,3,1,1), 'M', (16,3,1,1), 'M', (32,3,1,1), 'M', (64,3,1,1), "M", (64,3,1,1), "M", (64,3,1,1), (13,1,0,1)]
-
-elif encode_mode == "1x1non":
-    encode_config = [(8,1,0,1), (16,1,0,1), (13,1,0,1), (13,13,0,32), (13,1,0,1) ]
+    if tile_size == 32:
+        encode_config = [(8,3,1,1), 'M', (16,3,1,1), 'M', (32,3,1,1), 'M', (64,3,1,1), "M", (64,3,1,1), "M", (64,3,1,1), (13,1,0,1)]
+    elif tile_size == 16:
+        encode_config = [(8,3,1,1), 'M', (16,3,1,1), 'M', (32,3,1,1), 'M', (64,3,1,1), "M", (64,3,1,1), (13,1,0,1)]
 
 elif encode_mode == "32x32non":
-    encode_config = [(1,32,0,32), (8,1,0,1), (16,1,0,1), (13,1,0,1)]
+    if tile_size == 32:
+        encode_config = [(1,32,0,32), (8,1,0,1), (16,1,0,1), (13,1,0,1)]
+    elif tile_size == 16:
+        encode_config = [(1,16,0,16), (8,1,0,1), (16,1,0,1), (13,1,0,1)]
 
 elif encode_mode == "1x1_mix_32X32":
-    encode_config = [(8,1,0,1), (16,1,0,1), (1,32,0,32), (13,1,0,1)]
- 
+    if tile_size == 32:
+        encode_config = [(8,1,0,1), (16,1,0,1), (1,32,0,32), (13,1,0,1)]
+    elif tile_size == 16:
+        encode_config = [(8,1,0,1), (16,1,0,1), (1,16,0,16), (13,1,0,1)]
+
 color_list = [[50,1],[100,2],[150,3],[200,4],[250,5],[255,6]] #(color, lane_class)
 org_h = 1080
 org_w = 1920
@@ -84,8 +91,11 @@ ipm_w = 128 * 2
 
 augmentation = True
 
-img_mean = [103.939, 116.779, 123.68]
-img_std = [1., 1., 1.]
+# img_mean = [103.939, 116.779, 123.68]
+# img_std = [1., 1., 1.]
+
+img_mean = [0.485, 0.456, 0.406] 
+img_std = [0.229, 0.224, 0.225]
 
 no_centerline = True
 
@@ -112,7 +122,7 @@ K = np.array([[2015., 0., 960.],
 # top_view_region = np.array([[-10, 85], [10, 85], [-10, 5], [10, 5]])
 top_view_region = np.array([[-10, 103], [10, 103], [-10, 3], [10, 3]])
 batch_norm = True #bev encoder
-embedding_dim = 4 
+embedding_dim = 5
 
 ##### Loss function params 
 ### regression and classification offsets and angles
@@ -123,8 +133,7 @@ n_bins = 10
 #TODO: Change the values as per the Gen_net paper
 delta_pull = 0.1 ## delta_v 
 delta_push = 3.0 ## delta_d 
-tile_size = 32
-embed_dim = 4
+embed_dim = 5
 
 """""
 BIG BIG BIG NOTE: Is that the spatial size of ipm and BEV IPM projection are different?
@@ -133,22 +142,26 @@ May be to process the masks for the section 3.2 I need not multiply the ipm_h an
 """
 
 # ###logging params
-date_it = "27_June_"
-train_run_name = "Anchorless3DLane_norm_b8_noweights_32X1nonoverlap" + date_it
+date_it = "9_July_"
+train_run_name = date_it +  "Anchorless3DLane_norm_b8_YES0.001weights_16X1nonoverlap_CornFalse_0.001_0.1pullband_noclip_fixbranch_embed5" 
 val_frequency = 500
 vis_frequency = 100
 train_log_frequency = 10
 
 #if the predictions needs to be normalized
 normalize = True
+enable_clip = False
+allign_corners = False
+visualize_activations = True
+fix_branch = True
+weighted_loss = False
 
 # #Hyperparams
-epochs = 100
+epochs = 50
 batch_size = 8
 num_workers = 8
 l2_lambda = 1e-4
-# log_frequency_steps = 200
-lr = 0.001 
+lr = 0.001
 lrs_cd = 0
 lrs_factor = 0.75
 lrs_min = 1e-6
@@ -158,9 +171,16 @@ prefetch_factor = 2
 bg_weight = 0.4 #used in the loss function to reduce the importance of one class in tusimple
 
 #TODO: try different combination later as per the gradients and in the end try to balance them
-w_clustering_Loss = 0.5
-w_classification_Loss = 0.5
+w_clustering_Loss = 1
+w_classification_Loss = 0.1
 threshold_score = 0.3
+
+if enable_clip:
+    grad_clip = 10
+else: 
+    grad_clip = torch.inf
+
+fix_branch_epoch = 20
 
 """
 NOTE:: NOTE:: NOTE:: NOTE::

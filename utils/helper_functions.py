@@ -58,7 +58,7 @@ def HoughLine(image):
 
             return accumulator, thetas, rs, lane_exist
 
-def embedding_post_process(embedding, bin_seg, band_width=1.5, max_num_lane=5):
+def embedding_post_process(embedding, bin_seg, band_width=0.1, max_num_lane=5):
     """
     First use mean shift to find dense cluster center.
 
@@ -303,7 +303,7 @@ def data_aug_rotate(img):
     center_y = img.shape[1]/ 2
     rot_mat = cv2.getRotationMatrix2D((center_x, center_y), rot, 1.0)
     img_rot = np.array(img)
-    img_rot = cv2.warpAffine(img_rot, rot_mat, (img.shape[0],img.shape[1]), flags=cv2.INTER_LINEAR)
+    img_rot = cv2.warpAffine(img_rot, rot_mat, (img.shape[1],img.shape[0]), flags=cv2.INTER_LINEAR)
     rot_mat = np.vstack([rot_mat, [0, 0, 1]])
     return img_rot, rot_mat
 

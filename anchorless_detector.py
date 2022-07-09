@@ -65,6 +65,7 @@ class Anchorless3DLanedetector(nn.Module):
         self.embedding_dim = cfg.embedding_dim
         self.delta_push = cfg.delta_push
         self.delta_pull = cfg.delta_pull
+        self.cfg = cfg
 
         org_img_size = np.array([cfg.org_h, cfg.org_w])
         resize_img_size = np.array([cfg.resize_h, cfg.resize_w])
@@ -151,6 +152,9 @@ class Anchorless3DLanedetector(nn.Module):
                     layers += [conv2d, nn.ReLU(inplace=True)]
                 in_channels = v[0]
         return nn.Sequential(*layers)
+    
+    # def ret_activations(self,layer, cfg):
+
 
     def forward(self,x):
         output = {} 
@@ -164,7 +168,7 @@ class Anchorless3DLanedetector(nn.Module):
         # print("checking the shape of grid", grid.shape)
         # print("checking the shape of the input", x.shape)
 
-        x_proj = F.grid_sample(x, grid)
+        x_proj = F.grid_sample(x, grid, align_corners= self.cfg.allign_corners)
         # print("x_proj.shape: ", x_proj.shape)
 
         embedding_features = self.embedding(x_proj)
@@ -174,7 +178,7 @@ class Anchorless3DLanedetector(nn.Module):
         bev_features = self.bev_encoder(x_proj)
         # print("checking the tensor shaoe ater bev_encoder: ", bev_features.shape)
         
-        output.update({"embed_out": embedding_features, "bev_out": bev_features})
+        output.update({"embed_out": embedding_features, "bev_out": bev_features, "project_out":x_proj})
 
         return output
 
@@ -197,6 +201,7 @@ class Anchorless3DLanedetector(nn.Module):
         self.cam_pitch = cam_pitch
 
     def update_projection_for_data_aug(self, aug_mats):
+        print("updating the Augmented projection matrix with gt cam_height and cam_pitch")
         """
             update transformation matrix when data augmentation have been applied, and the image augmentation matrix are provided
             Need to consider both the cases of 1. when using ground-truth cam_height, cam_pitch, update M_inv
@@ -234,5 +239,4 @@ def load_3d_model(cfg, device, pretrained = False):
                 nn.init.normal_(m.weight, 0, 0.01)
                 nn.init.constant_(m.bias, 0)
         print("=> Initialized the anchorless 3d lane detection model weights")
-            
-    return model 
+    return model
