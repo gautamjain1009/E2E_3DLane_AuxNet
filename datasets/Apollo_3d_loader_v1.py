@@ -6,226 +6,17 @@ import numpy as np
 import cv2 
 import os 
 import torchvision.transforms as transforms
-from torch.utils.data import Dataset, DataLoader, IterableDataset
+from torch.utils.data import Dataset, DataLoader
 import json 
 from utils.helper_functions import *
 import matplotlib.pyplot as plt
-from torch import multiprocessing
 from moviepy.video.io.bindings import mplfig_to_npimage
-import subprocess
+
+
+"""
+Import just for unit test
+"""
 from utils.config import Config
-
-
-def parse_affinity(cmd_output):
-    ''' 
-    Extracts the list of CPU ids from the `taskset -cp <pid>` command.
-
-    example input : b"pid 38293's current affinity list: 0-3,96-99,108\n" 
-    example output: [0,1,2,3,96,97,98,99,108]
-    '''
-    ranges_str = cmd_output.decode('utf8').split(': ')[-1].rstrip('\n').split(',')
-
-    list_of_cpus = []
-    for rng in ranges_str:
-        is_range = '-' in rng
-
-        if is_range:
-            start, end = rng.split('-')
-            rng_cpus = range(int(start), int(end)+1) # include end
-            list_of_cpus += rng_cpus
-        else:
-            list_of_cpus.append(int(rng))
-
-    return list_of_cpus
-
-
-def set_affinity(pid, cpu_list):
-    cmd = ['taskset', '-pc', ','.join(map(str, cpu_list)), str(pid)]
-    subprocess.check_output(cmd, shell=False)
-
-
-def get_affinity(pid):
-    cmd = ['taskset', '-pc',  str(pid)]
-    output = subprocess.check_output(cmd, shell=False)
-    return parse_affinity(output)
-
-
-def configure_worker(worker_id):
-    '''
-    Configures the worker to use the correct affinity.
-    '''
-    worker_info = torch.utils.data.get_worker_info()
-    if worker_info is None:
-        worker_id = 0
-        num_workers = 1
-    else:
-        worker_id = worker_info.id
-        num_workers = worker_info.num_workers
-
-    worker_pid = os.getpid()
-    dataset = worker_info.dataset
-    avail_cpus = get_affinity(worker_pid)
-    validation_term = 1 if dataset.validation else 0  # support two loaders at a time
-    offset = len(avail_cpus) - (num_workers * 2) # keep the first few cpus free (it seemed they were faster, important for BackgroundGenerator)
-    cpu_idx = max(offset + num_workers * validation_term + worker_id, 0)
-
-    # force the process to only use 1 core instead of all
-    set_affinity(worker_pid, [avail_cpus[cpu_idx]])
-
-
-class BatchDataLoader:
-    '''Assumes batch_size == num_workers to ensure same ordering of segments in each batch'''
-
-    def __init__(self, loader, batch_size, mode):
-        self.loader = loader
-        self.batch_size = batch_size
-        self.mode = mode
-
-    def __iter__(self):
-        bs = self.batch_size
-        batch = [None] * bs
-        current_bs = 0
-        workers_seen = set()
-        for d in self.loader:
-            # print("checking gt lane score tensor", d[7])
-            worker_id = d[-1]
-            # print("checking if i reach at least until here==============", worker_id)
-
-            # this means there're fewer segments left than the size of the batch — drop the last ones
-            if worker_id in workers_seen:
-                print(f'WARNING: sequence from worker:{worker_id} already seen in this batch. Dropping segments.')
-                return  # FIXME: maybe pad the missing sequences with zeros and yield?
-
-            batch[worker_id] = d
-            current_bs += 1
-            workers_seen.add(worker_id)
-
-            if current_bs == bs:
-                if self.mode == 'train':
-                    collated_batch = self.collate_fn_train(batch)
-                elif self.mode == 'test':
-                    collated_batch = self.collate_fn_val(batch)
-
-                # print(""checking the time)
-                yield collated_batch
-                batch = [None] * bs
-                current_bs = 0
-                workers_seen = set()
-
-    def collate_fn_train(self, batch):
-
-        img_data = [item[0] for item in batch]
-        img_data = torch.stack(img_data, dim = 0)
-        
-        gt_camera_height_data = [item[2] for item in batch]
-        gt_camera_height_data = torch.stack(gt_camera_height_data, dim = 0)
-
-        gt_camera_pitch_data = [item[3] for item in batch]
-        gt_camera_pitch_data = torch.stack(gt_camera_pitch_data, dim = 0)
-
-        gt_lanelines_data = [item[4] for item in batch]
-
-        gt_rho_data = [item[5] for item in batch]
-        gt_rho_data = torch.stack(gt_rho_data, dim = 0)
-        
-        gt_phi_data = [item[6] for item in batch]
-        gt_phi_data = torch.stack(gt_phi_data, dim = 0)
-        
-        gt_cls_score_data = [item[7] for item in batch]
-        gt_cls_score_data = torch.stack(gt_cls_score_data, dim = 0)
-
-        gt_lane_class_data = [item[8] for item in batch]
-        gt_lane_class_data = torch.stack(gt_lane_class_data, dim = 0)
-
-        gt_delta_z_data = [item[9] for item in batch]
-        gt_delta_z_data = torch.stack(gt_delta_z_data, dim = 0)
-        
-        gt_image_full_path =[item[10] for item in batch]
-
-        idx_data = [item[11] for item in batch]
-        
-        worker_idx = [item[12] for item in batch]
-
-        aug_mat_data = [item[1] for item in batch]
-        aug_mat_data = torch.stack(aug_mat_data, dim = 0)
-
-        return [img_data, aug_mat_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data, gt_image_full_path, idx_data, worker_idx]
-                    # 0      1                2                   3                    4                    5                 6                 7                 8          9              10                  11              12
-        # else: #no augmentation
-        #     return [img_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data, gt_image_full_path, idx_data]
-    
-    def collate_fn_val(self, batch):
-        img_data = [item[0] for item in batch]
-        img_data = torch.stack(img_data, dim = 0)
-        
-        gt_camera_height_data = [item[1] for item in batch]
-        gt_camera_height_data = torch.stack(gt_camera_height_data, dim = 0)
-
-        gt_camera_pitch_data = [item[2] for item in batch]
-        gt_camera_pitch_data = torch.stack(gt_camera_pitch_data, dim = 0)
-
-        gt_lanelines_data = [item[3] for item in batch]
-
-        gt_rho_data = [item[4] for item in batch]
-        gt_rho_data = torch.stack(gt_rho_data, dim = 0)
-        
-        gt_phi_data = [item[5] for item in batch]
-        gt_phi_data = torch.stack(gt_phi_data, dim = 0)
-        
-        gt_cls_score_data = [item[6] for item in batch]
-        gt_cls_score_data = torch.stack(gt_cls_score_data, dim = 0)
-
-        gt_lane_class_data = [item[7] for item in batch]
-        gt_lane_class_data = torch.stack(gt_lane_class_data, dim = 0)
-
-        gt_delta_z_data = [item[8] for item in batch]
-        gt_delta_z_data = torch.stack(gt_delta_z_data, dim = 0)
-        
-        gt_image_full_path =[item[9] for item in batch]
-
-        idx_data = [item[10] for item in batch]
-        
-        worker_idx = [item[11] for item in batch]
-        
-        return [img_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data, gt_image_full_path, idx_data, worker_idx]
-                    # 0      1                          2                   3                    4             5                 6                 7                 8          9              10                  11              12
-
-    def __len__(self):
-        return len(self.loader)
-
-
-class BackgroundGenerator(multiprocessing.Process):
-    def __init__(self, generator):
-        super(BackgroundGenerator, self).__init__() 
-        # TODO: use prefetch factor instead of harcoded value
-        self.queue = torch.multiprocessing.Queue(1)
-        self.generator = generator
-        self.start()
-
-    def run(self):
-        while True:
-            for item in self.generator:
-                # print(item.keys())
-
-                # do not start (blocking) insertion into a full queue, just wait and then retry
-                # this way we do not block the consumer process, allowing instant batch fetching for the model
-                while self.queue.full():
-                    time.sleep(2)
-
-                self.queue.put(item)
-            self.queue.put(None)
-
-    def __iter__(self):
-        try:
-            next_item = self.queue.get()
-            while next_item is not None:
-                yield next_item
-                next_item = self.queue.get()
-        except (ConnectionResetError, ConnectionRefusedError) as err:
-            print('[BackgroundGenerator] Error:', err)
-            self.shutdown()
-            raise StopIteration
-
 
 #TODO: move this class to utils during code cleanup later
 class Visualization(object):
@@ -289,9 +80,6 @@ class Visualization(object):
         im_ipm = cv2.warpPerspective(img, H_im2ipm, (self.ipm_w, self.ipm_h))
         # im_ipm = np.clip(im_ipm, 0, 1)
         cnt_gt = len(gt_lanes)
-
-        print("check if the number of lanes in visssss", cnt_gt)
-
         gt_visibility_mat = np.zeros((cnt_gt, 100))
                 
         # resample gt and pred at y_samples
@@ -324,6 +112,7 @@ class Visualization(object):
         for i in range(cnt_gt):
             x_values = np.array(gt_lanes[i])[:, 0]
             z_values = np.array(gt_lanes[i])[:, 1]
+            
             
             # TODO: remove this condition later
             if flag == True:
@@ -362,12 +151,15 @@ class Visualization(object):
                     # print("print here", vis)
                     #TODO: Verify - or + for the value for delta_z
                     dummy_image = cv2.line(dummy_image, (x_ipm_values[k - 1], y_ipm_values[k - 1]),
-                                    (x_ipm_values[k], y_ipm_values[k]), (255,0,0), 1)
+                                (x_ipm_values[k], y_ipm_values[k]), (255,0,0), 1)
 
-            #draw in 3d
-            ax1.plot(x_values[np.where(gt_visibility_mat[i, :])],
-                    self.y_samples[np.where(gt_visibility_mat[i, :])],
-                    z_values[np.where(gt_visibility_mat[i, :])], color= 'green', linewidth=1)
+            # draw in 3d
+            # ax1.plot(x_values[np.where(gt_visibility_mat[i, :])],
+            #         self.y_samples[np.where(gt_visibility_mat[i, :])],
+            #         z_values[np.where(gt_visibility_mat[i, :])], color= 'green', linewidth=1)
+            ax1.plot(x_values,
+                    self.y_samples,
+                    z_values, color= 'green', linewidth=1)
 
 
         ax2.imshow(img[:,:,[2,1,0]])
@@ -422,7 +214,10 @@ class CalculateDistanceAngleOffests(object):
         H_g2im = homography_g2im(gt_cam_pitch, gt_cam_height, self.K)
         H_im2ipm = np.linalg.inv(np.matmul(self.H_crop, np.matmul(H_g2im, self.H_ipm2g)))
 
+        # print("Checking the shape of original image: ", img.shape)
+
         img = cv2.warpPerspective(img, self.H_crop, (self.resize_w, self.resize_h))
+        # print("Checking the shape of cropped image: ", img.shape)     
 
         # img = img.astype(np.float) / 255
         im_ipm = cv2.warpPerspective(img, H_im2ipm, (self.ipm_w, self.ipm_h))
@@ -512,9 +307,8 @@ class GeneratePertile():
 
 
     def generategt_pertile(self, gt_lanes, img , gt_cam_height, gt_cam_pitch):
-        cv2.imwrite("v2investigate_if_rgb.jpg", img)
         bev_projected_lanes, dz_dict = self.calculate_bev_projection.draw_bevlanes(gt_lanes, img,  gt_cam_height, gt_cam_pitch, self.color_list) ## returns an image array of gt lanes projected on BEV
-        cv2.imwrite("v2investigate_if.jpg" , bev_projected_lanes)
+        # cv2.imwrite("/home/gautam/Thesis/E2E_3DLane_AuxNet/datasets/complete_lines_test1001.jpg" , bev_projected_lanes)
 
         ##init gt arrays for rho, phi and classification score and delta_z
         grid_x = int(bev_projected_lanes.shape[0]/self.tile_size)
@@ -592,7 +386,7 @@ class GeneratePertile():
                     gt_lane_class[x_idx,y_idx] = 6
                 else:
                     gt_lane_class[x_idx,y_idx] = 0
-        print("print gt_lane_class gt inside the genrate function =====>", np.unique(gt_lane_class))
+
         return gt_rho, gt_phi, gt_c, gt_lane_class, gt_delta_z
 
 def unnormalize(pred_data, min_pred, max_pred):
@@ -609,8 +403,8 @@ def unnormalize(pred_data, min_pred, max_pred):
     """
     return (pred_data * (max_pred - min_pred)) + min_pred
 
-class Apollo3d_loader(IterableDataset):
-    def __init__(self, data_root, data_splits, shuffle, phase, seed = 27, cfg = None):
+class Apollo3d_loader(Dataset):
+    def __init__(self, data_root, data_splits, phase = "train", cfg = None):
         super(Apollo3d_loader, self,).__init__()
         
         self.cfg = cfg
@@ -620,14 +414,10 @@ class Apollo3d_loader(IterableDataset):
         self.camera_intrinsics = self.cfg.K
         self.h_crop = self.cfg.crop_y
         self.generate_pertile = GeneratePertile(cfg)
-        self.validation = False
-        self.seed = seed
-        self.shuffle = shuffle
         
         if phase == "train":
             self.data_filepath = os.path.join(self.data_splits, "train.json")
         elif phase == "test":
-            self.validation = True
             self.data_filepath = os.path.join(self.data_splits, "test.json")
         if not os.path.exists(self.data_filepath):
             raise Exception('Fail to load the train.json file')
@@ -660,90 +450,110 @@ class Apollo3d_loader(IterableDataset):
         return norm_data 
 
     def __len__(self):
-        return len(self.image_keys)//self.cfg.batch_size
+        return len(self.image_keys)
 
-    def __iter__(self):
+    def __getitem__(self, idx):
+        batch = {}
+        batch.update({"idx": idx})
 
-        #suffle datasubset after each epoch
-        # if self.shuffle:
-        #     rng = np.random.default_rng(self.seed)
-        #     rng.shuffle(self.image_keys)
-
-        worker_info = torch.utils.data.get_worker_info()
+        gtdata = self.data[self.image_keys[idx]]
+        img_path = os.path.join(self.data_root, gtdata['raw_file'])
         
-        if worker_info is None:
-            worker_id = 0
-            num_workers = 1
-        else:
-            worker_id = worker_info.id
-            num_workers = worker_info.num_workers
+        if not os.path.exists(img_path):
+            raise FileNotFoundError('cannot find file: {}'.format(img_path))
+        
+        batch.update({"img_full_path": img_path})
 
-        for idx in range(worker_id, len(self.image_keys), num_workers):
+        img = cv2.imread(img_path)
+        
+        gt_camera_height = np.array(gtdata['cam_height'])
+        gt_camera_pitch =np.array(gtdata['cam_pitch'])
 
-            batch = {}
-            batch.update({"idx": idx})
+        batch.update({"gt_height":torch.from_numpy(gt_camera_height)})
+        batch.update({"gt_pitch":torch.from_numpy(gt_camera_pitch)})
+        
+        #TODO: correct the data representation of lane points while in the need of visulization
+        gt_lanelines = gtdata['laneLines']
+        batch.update({'gt_lanelines':gt_lanelines.copy()})
+        gt_lateral_offset, gt_lateral_angleoffset, gt_cls_score, gt_lane_class, gt_delta_z = self.generate_pertile.generategt_pertile(gt_lanelines, img.copy(), gt_camera_height, gt_camera_pitch)
 
-            gtdata = self.data[self.image_keys[idx]]
-            img_path = os.path.join(self.data_root, gtdata['raw_file'])
+        norm_gt_lateral_offset = self.normalize(gt_lateral_offset, self.cfg.min_lateral_offset, self.cfg.max_lateral_offset)
+        norm_gt_delta_z = self.normalize(gt_delta_z, self.cfg.min_delta_z, self.cfg.max_delta_z)
+        
+        if self.cfg.normalize == True:
             
-            if not os.path.exists(img_path):
-                raise FileNotFoundError('cannot find file: {}'.format(img_path))
-            
-            batch.update({"img_full_path": img_path})
+            batch.update({'gt_rho':torch.from_numpy(norm_gt_lateral_offset)})    
+            batch.update({'gt_delta_z':torch.from_numpy(norm_gt_delta_z)})
+        else : 
+            batch.update({'gt_rho':torch.from_numpy(gt_lateral_offset)})    
+            batch.update({'gt_delta_z':torch.from_numpy(gt_delta_z)})
+        
+        batch.update({'gt_phi':torch.from_numpy(gt_lateral_angleoffset)})
+        batch.update({'gt_clscore':torch.from_numpy(gt_cls_score)})
+        batch.update({'gt_lane_class':torch.from_numpy(gt_lane_class)})
 
-            print("check if the laoder is fetching the correct image_path", img_path)
-            img = cv2.imread(img_path)
-            
-            gt_camera_height = np.array(gtdata['cam_height'])
-            gt_camera_pitch =np.array(gtdata['cam_pitch'])
+        #resize
+        img = cv2.resize(img, (self.cfg.resize_h, self.cfg.resize_w), interpolation=cv2.INTER_AREA)
 
-            batch.update({"gt_height":torch.from_numpy(gt_camera_height)})
-            batch.update({"gt_pitch":torch.from_numpy(gt_camera_pitch)})
-            
-            #TODO: correct the data representation of lane points while in the need of visulization
-            gt_lanelines = gtdata['laneLines']
-            batch.update({'gt_lanelines':gt_lanelines.copy()})
-            gt_lateral_offset, gt_lateral_angleoffset, gt_cls_score, gt_lane_class, gt_delta_z = self.generate_pertile.generategt_pertile(gt_lanelines, img.copy(), gt_camera_height, gt_camera_pitch)
+        if self.phase == "train": #training only
+            img, aug_mat = data_aug_rotate(img)
+            batch.update({"aug_mat": torch.from_numpy(aug_mat)})
+        
+        #convert the image to tensor
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB) #( BGR -> RGB)
+        img = transforms.ToTensor()(img)
+        
+        img = transforms.Normalize(mean= self.cfg.img_mean, std=self.cfg.img_std)(img)
+        batch.update({"image":img})
+        
+        return batch
+        
+def collate_fn(batch):
+    """
+    This function is used to collate the data for the dataloader
+    """
 
-            norm_gt_lateral_offset = self.normalize(gt_lateral_offset, self.cfg.min_lateral_offset, self.cfg.max_lateral_offset)
-            norm_gt_delta_z = self.normalize(gt_delta_z, self.cfg.min_delta_z, self.cfg.max_delta_z)
-            
-            if self.cfg.normalize == True:
-                
-                batch.update({'gt_rho':torch.from_numpy(norm_gt_lateral_offset)})    
-                batch.update({'gt_delta_z':torch.from_numpy(norm_gt_delta_z)})
-            else : 
-                batch.update({'gt_rho':torch.from_numpy(gt_lateral_offset)})    
-                batch.update({'gt_delta_z':torch.from_numpy(gt_delta_z)})
-            
-            batch.update({'gt_phi':torch.from_numpy(gt_lateral_angleoffset)})
-            batch.update({'gt_clscore':torch.from_numpy(gt_cls_score)})
-            batch.update({'gt_lane_class':torch.from_numpy(gt_lane_class)})
+    img_data = [item['image'] for item in batch]
+    img_data = torch.stack(img_data, dim = 0)
+    
+    gt_camera_height_data = [item['gt_height'] for item in batch]
+    gt_camera_height_data = torch.stack(gt_camera_height_data, dim = 0)
 
-            #resize
-            #TODO: NOTE: DISCLAIMER: to check if i shoudl send the full image for generating gt or this is okay
-            img = cv2.resize(img, (self.cfg.resize_w, self.cfg.resize_h), interpolation=cv2.INTER_AREA)
+    gt_camera_pitch_data = [item['gt_pitch'] for item in batch]
+    gt_camera_pitch_data = torch.stack(gt_camera_pitch_data, dim = 0)
 
-            if self.phase == "train": #training only
-                img, aug_mat = data_aug_rotate(img)
-                batch.update({"aug_mat": torch.from_numpy(aug_mat)})
-            #convert the image to tensor
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB) #( BGR -> RGB)
-            img = transforms.ToTensor()(img)
-            img = transforms.Normalize(mean= self.cfg.img_mean, std=self.cfg.img_std)(img)
-            batch.update({"image":img})
-            
-            batch.update({"worker_id": worker_id})
+    gt_lanelines_data = [item['gt_lanelines'] for item in batch]
 
-            # yield batch
-        # [img_data, aug_mat_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data, gt_image_full_path, idx_data]
-            if self.phase == "train":
-                yield batch["image"], batch["aug_mat"], batch["gt_height"], batch["gt_pitch"], batch["gt_lanelines"], batch["gt_rho"], batch["gt_phi"], batch["gt_clscore"], batch["gt_lane_class"], batch["gt_delta_z"], batch["img_full_path"], batch["idx"], batch["worker_id"]
-                #           0           1                   2                   3                       4               5                   6               7                           8                   9                   10                      11              12              
-            else: 
-                yield batch["image"], batch["gt_height"], batch["gt_pitch"], batch["gt_lanelines"], batch["gt_rho"], batch["gt_phi"], batch["gt_clscore"], batch["gt_lane_class"], batch["gt_delta_z"], batch["img_full_path"], batch["idx"], batch["worker_id"]
-                #           0           1                   2                   3                       4               5                   6               7                           8                   9                   10                      11              12              
+    gt_rho_data = [item['gt_rho'] for item in batch]
+    gt_rho_data = torch.stack(gt_rho_data, dim = 0)
+    
+    gt_phi_data = [item['gt_phi'] for item in batch]
+    gt_phi_data = torch.stack(gt_phi_data, dim = 0)
+    
+    gt_cls_score_data = [item['gt_clscore'] for item in batch]
+    gt_cls_score_data = torch.stack(gt_cls_score_data, dim = 0)
+
+    gt_lane_class_data = [item['gt_lane_class'] for item in batch]
+    gt_lane_class_data = torch.stack(gt_lane_class_data, dim = 0)
+
+    gt_delta_z_data = [item['gt_delta_z'] for item in batch]
+    gt_delta_z_data = torch.stack(gt_delta_z_data, dim = 0)
+    
+    gt_image_full_path =[item["img_full_path"] for item in batch]
+
+    idx_data = [item['idx'] for item in batch]
+    
+    if 'aug_mat' in batch[0]:
+        aug_mat_data = [item['aug_mat'] for item in batch]
+        aug_mat_data = torch.stack(aug_mat_data, dim = 0)
+
+        return [img_data, aug_mat_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data, gt_image_full_path, idx_data]
+                    # 0      1                2                   3                    4                    5                 6                 7                 8          9              10                  11
+    else: #no augmentation
+        return [img_data, gt_camera_height_data, gt_camera_pitch_data, gt_lanelines_data, gt_rho_data, gt_phi_data, gt_cls_score_data, gt_lane_class_data, gt_delta_z_data, gt_image_full_path, idx_data]
+                    #0      1                           2                   3                    4             5                 6                 7                 8          9                   10              
 if __name__ == "__main__":
+
     #unit test for the data loader
     #TODO: add the hardcoded arguments to config file later on
     data_root = '/home/ims-robotics/Documents/gautam/dataset/Apollo_Sim_3D_Lane_Release'
@@ -752,19 +562,14 @@ if __name__ == "__main__":
     
     cfgs = Config.fromfile(config_path)
     vis = Visualization(cfgs.org_h, cfgs.org_w, cfgs.resize_h, cfgs.resize_w, cfgs.K, cfgs.ipm_w, cfgs.ipm_h, cfgs.crop_y, cfgs.top_view_region)
+    dataset = Apollo3d_loader(data_root, data_splits, cfg = cfgs, phase = 'train')
+    loader = DataLoader(dataset, batch_size=4, shuffle=True, num_workers=4, collate_fn=collate_fn, prefetch_factor=1, persistent_workers=True)
 
-    dataset = Apollo3d_loader(data_root, data_splits, shuffle = False, cfg = cfgs, phase = 'train')
-    loader = DataLoader(dataset, batch_size=None, num_workers=cfgs.batch_size, collate_fn= None, prefetch_factor=1, persistent_workers=True, worker_init_fn= configure_worker)
-    
-    loader = BatchDataLoader(loader, batch_size = cfgs.batch_size, mode = 'train')
-    loader = BackgroundGenerator(loader)
-
+    """
+    Below code can be used to debug, verify and visualize the gt generating
+    """
     start_point = time.time()
-    """
-    Below code can be used to debug verify and visualize the gt generating
-    """
     for i, data in enumerate(loader):
-        print("begining data fetching ====>")
         print("check the bumber of iterations i fetch the batch:::::",i)
         vis_rho_pred = data[5] #---> (b,13,8)
         vis_delta_z_pred = data[9] #--> (b,13,8)
@@ -772,11 +577,8 @@ if __name__ == "__main__":
         # print(vis_cls_score_pred)
         vis_phi_pred = data[6] # --> (b,10,13,8) ---> (b,13,8)
         vis_lane_class = data[8]
-        print(vis_lane_class)
         vis_cam_height = data[2].cpu().numpy()
         vis_cam_pitch = data[3].cpu().numpy()
-        
-        print("===================len lanes gt",len(data[4][0]))
         print(data[10])
 
         for b in range(vis_rho_pred.shape[0]):
@@ -838,16 +640,13 @@ if __name__ == "__main__":
             print("checking the number of points in gt lane points for first lane", len(data[4][b][0]))
             #list containing arrays of lane points
             #TODO: obtain a single plot with all the plots
-            cv2.imwrite("v2sanity_check_rgb.jpg", vis_img.copy())
-            pred_fig = vis.draw_lanes(points, vis_img.copy(), vis_cam_height_b, vis_cam_pitch_b)
-            pred_fig = mplfig_to_npimage(pred_fig)
-            cv2.imwrite("v2sanity_check.jpg", pred_fig)
+            # cv2.imwrite("vis_sanity_check_rgb.jpg", vis_img.copy())
+            # pred_fig = vis.draw_lanes(points, vis_img.copy(), vis_cam_height_b, vis_cam_pitch_b)
+            # pred_fig = mplfig_to_npimage(pred_fig)
+            # cv2.imwrite("vis_gt_sanity_check.jpg", pred_fig)
 
             pred_fig_real = vis.draw_lanes(data[4][b], vis_img.copy(), vis_cam_height_b, vis_cam_pitch_b)
             pred_fig_real = mplfig_to_npimage(pred_fig_real)
-            cv2.imwrite("v2sanity_check_real.jpg", pred_fig_real)
-
-
+            cv2.imwrite("sanity_check_real_gt.jpg", pred_fig_real)
             break
         break
-

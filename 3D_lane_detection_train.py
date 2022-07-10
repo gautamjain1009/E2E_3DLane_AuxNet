@@ -20,8 +20,12 @@ import torch.optim as topt
 from timing import * 
 import json
 from moviepy.video.io.bindings import mplfig_to_npimage
+
+#This loader is fast but buggy, using v1
+# from datasets.Apollo3d_loader import Apollo3d_loader, Visualization, configure_worker, BatchDataLoader, BackgroundGenerator
+from datasets.Apollo_3d_loader_v1 import Apollo3d_loader, collate_fn, Visualization
+
 #build import for different moduless
-from datasets.Apollo3d_loader import Apollo3d_loader, Visualization, configure_worker, BatchDataLoader, BackgroundGenerator
 from models.build_model import load_model
 from utils.helper_functions import *
 from anchorless_detector import load_3d_model
@@ -425,8 +429,8 @@ def visualization(cfg, model2d, model3d, vis_loader, p, device, epoch, itr):
                 vis_gt_numpy_fig = cv2.cvtColor(gt_numpy_fig, cv2.COLOR_BGR2RGB)
                 vis_pred_numpy_fig = cv2.cvtColor(pred_numpy_fig, cv2.COLOR_BGR2RGB)
 
-                wandb.log({"validate Predictions":wandb.Image(vis_pred_numpy_fig)}, commit = False)
-                wandb.log({"validate GT":wandb.Image(vis_gt_numpy_fig)}, commit = False)
+                wandb.log({"validate Predictions":wandb.Image(vis_pred_numpy_fig)}, commit = True)
+                wandb.log({"validate GT":wandb.Image(vis_gt_numpy_fig)}, commit = True)
                 
                 del vis_gt_numpy_fig
                 del vis_pred_numpy_fig
@@ -675,7 +679,7 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
             #     cv2.imwrite(image_save_path, vis_img)
             #     # images.append(vis_img)
                 ######################################################################
-                #         
+                        
             print("checking if model 2d correct in training")
             a = torch.argmax(o, dim =1)
 
@@ -803,7 +807,6 @@ def image_to_tensor(img):
 
 def freeze_network(model, layer):
     for name, p in model.named_parameters():
-        # freeze the regression layers
         if layer in name:
             p.requires_grad = False
 
@@ -873,24 +876,22 @@ if __name__ == "__main__":
     #initialise the evaluator
     evaluator = Apollo_3d_eval.LaneEval(cfg)
     
-    train_dataset = Apollo3d_loader(data_root, data_split, shuffle = True, cfg = cfg, phase = 'train')
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=None, num_workers=cfg.batch_size, collate_fn= None, prefetch_factor=2, persistent_workers=True, worker_init_fn= configure_worker)
-    train_loader = BatchDataLoader(train_loader, batch_size = cfg.batch_size, mode ='train')
-    train_loader_len = len(train_loader)
-    train_loader = BackgroundGenerator(train_loader)
-    
-    val_dataset = Apollo3d_loader(data_root, data_split, shuffle = False, cfg = cfg, phase = 'test')
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=None, num_workers=cfg.batch_size, collate_fn= None, prefetch_factor=2, persistent_workers=True, worker_init_fn= configure_worker)
-    val_loader = BatchDataLoader(val_loader, batch_size = cfg.batch_size, mode = 'test')
-    val_loader_len = len(val_loader)
-    val_loader = BackgroundGenerator(val_loader)
+    #dataloader
+    train_dataset = Apollo3d_loader(data_root, data_split, cfg = cfg, phase = "train")
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.num_workers, collate_fn = collate_fn, 
+                                                pin_memory=True, drop_last=True, prefetch_factor=cfg.prefetch_factor, persistent_workers=True)
 
-    vis_dataset = Apollo3d_loader(data_root, data_split, shuffle = False, cfg = cfg, phase = 'test')
-    vis_loader = torch.utils.data.DataLoader(val_dataset, batch_size=None, num_workers=cfg.batch_size, collate_fn= None, prefetch_factor=2, persistent_workers=False, worker_init_fn= configure_worker)
-    vis_loader = BatchDataLoader(vis_loader, batch_size = cfg.batch_size, mode = 'test')
-    vis_loader_len = len(vis_loader)
-    vis_loader = BackgroundGenerator(vis_loader)
+    val_dataset = Apollo3d_loader(data_root, data_split, cfg = cfg, phase = "test")
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=cfg.batch_size, shuffle=False, num_workers=cfg.num_workers, collate_fn = collate_fn, pin_memory=True,
+                                            prefetch_factor=cfg.prefetch_factor, persistent_workers=True)
+
+    vis_dataset = Apollo3d_loader(data_root, data_split, cfg = cfg, phase = "test")
+    vis_loader = torch.utils.data.DataLoader(val_dataset, batch_size=cfg.batch_size, shuffle=False, num_workers=cfg.num_workers, collate_fn = collate_fn, pin_memory=True,
+                                            prefetch_factor=cfg.prefetch_factor, persistent_workers=True)
     
+    train_loader_len = len(train_loader)
+    val_loader_len = len(val_loader)
+
     print("===> batches in train loader", train_loader_len)
     print("===> batches in val loader", val_loader_len)
     

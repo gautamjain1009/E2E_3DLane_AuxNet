@@ -142,8 +142,8 @@ May be to process the masks for the section 3.2 I need not multiply the ipm_h an
 """
 
 # ###logging params
-date_it = "9_July_"
-train_run_name = date_it +  "Anchorless3DLane_norm_b8_YES0.001weights_16X1nonoverlap_CornFalse_0.001_0.1pullband_noclip_fixbranch_embed5" 
+date_it = "11_july_"
+train_run_name = date_it +  "Anchorless3DLane_norm_b8_YES0.01weights_16X1nonoverlap_CornFalse_0.001_0.1pullband_noclip_fixbranch_embed5" 
 val_frequency = 500
 vis_frequency = 100
 train_log_frequency = 10
@@ -154,7 +154,7 @@ enable_clip = False
 allign_corners = False
 visualize_activations = True
 fix_branch = True
-weighted_loss = False
+weighted_loss = True
 
 # #Hyperparams
 epochs = 50
