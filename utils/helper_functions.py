@@ -10,7 +10,53 @@ def pprint_seconds(seconds):
     seconds = seconds % 60
     return f"{int(hours):1d}h {int(minutes):1d}min {int(seconds):1d}s"
  
-def HoughLine(image):
+def HoughLine2(image):
+        ''' Basic Hough line transform that builds the accumulator array
+        Input : image tile (gray scale image)
+        Output : accumulator : the accumulator of hough space
+                thetas : values of theta (0 : 360)
+                rs : values of radius (-max distance : max distance)
+        '''
+        lane_exist = False
+
+        #Get image dimensions
+        # y for rows and x for columns 
+        Ny = image.shape[0]
+        Nx = image.shape[1]
+
+        #Max diatance is diagonal one 
+        Maxdist = int(np.round(np.sqrt(Nx**2 + Ny ** 2)/2))
+        print("Maxdis::::::",Maxdist)
+
+        # Theta in range from -90 to 90 degrees
+        thetas = np.deg2rad(np.arange(0, 360))
+        
+        #Range of radius
+        rs = np.linspace(-Maxdist, Maxdist, 2*Maxdist)
+
+        #Create accumulator array and initialize to zero
+        accumulator = np.zeros((2 * Maxdist, len(thetas)))
+         
+        # Loop for each edge pixel
+        for y in range(Ny):
+            for x in range(Nx):
+                # Check if it is an edge pixel
+                #  NB: y -> rows , x -> columns
+                if image[y,x] > 0:
+                    lane_exist = True
+                    #Loop for each theta
+                    # Map edge pixel to hough space
+                    for k in range(len(thetas)):
+                    #calculate ρ
+                        r = x*np.cos(thetas[k]) + y * np.sin(thetas[k])
+                    # Increment accumulator at r, theta    
+                        # Update the accumulator
+                        # N.B: r has value -max to max
+                        # map r to its idx 0 : 2*max
+                        accumulator[int(r) + Maxdist,k] += 1
+        return accumulator, thetas, rs, lane_exist
+
+def HoughLine1(image):
     
         '''  Hough line transform that builds the accumulator array from the center of the image.
         Input : image tile (gray scale image)
@@ -26,14 +72,14 @@ def HoughLine(image):
         Nx = image.shape[1]
 
         #Max diatance is diagonal one 
-        Maxdist = int(np.round(np.sqrt(Nx**2 + Ny ** 2)/2)) #-- 23
+        Maxdist = int(np.round(np.sqrt(Nx**2 + Ny ** 2))) #-- 23
 
         # Theta in range from -90 to 90 degrees
-        thetas = np.deg2rad(np.arange(0, 360,1))
+        thetas = np.deg2rad(np.arange(-90, 90,))
         
         #Range of radius
-        # rs = np.linspace(-Maxdist, Maxdist, 2*Maxdist )
-        rs = np.arange(-Maxdist, Maxdist + 1, 1)
+        rs = np.linspace(-Maxdist, Maxdist, 2*Maxdist )
+        # rs = np.arange(-Maxdist, Maxdist, 1)
 
         #Create accumulator array and initialize to zero
         accumulator = np.zeros((len(rs), len(thetas)))
@@ -57,6 +103,94 @@ def HoughLine(image):
                         continue
 
             return accumulator, thetas, rs, lane_exist
+
+def HoughLine(edge_image, num_rhos=180, num_thetas=180, t_count=10):
+
+    lane_exist = False
+    edge_height, edge_width = edge_image.shape[:2]
+    edge_height_half, edge_width_half = edge_height / 2, edge_width / 2
+    #
+    d = np.round(np.sqrt(np.square(edge_height) + np.square(edge_width)))
+
+    dtheta = 180 / num_thetas
+    drho = (2 * d) / num_rhos
+    #
+    thetas = np.arange(0, 180, step=dtheta)
+    rhos = np.arange(-d, d, step=drho)
+    #
+    cos_thetas = np.cos(np.deg2rad(thetas))
+    sin_thetas = np.sin(np.deg2rad(thetas))
+    #
+    accumulator = np.zeros((len(rhos), len(rhos)))
+
+    edge_points = np.argwhere(edge_image != 0)
+    
+    if edge_points.any():
+        lane_exist = True
+    else: 
+        lane_exist = lane_exist
+
+    edge_points = edge_points - np.array([[edge_height_half, edge_width_half]])
+    #
+    rho_values = np.matmul(edge_points, np.array([sin_thetas, cos_thetas]))
+    #
+    accumulator, theta_vals, rho_vals = np.histogram2d(
+        np.tile(thetas, rho_values.shape[0]),
+        rho_values.ravel(),
+        bins=[thetas, rhos]
+    )
+    accumulator = np.transpose(accumulator)
+    lines = np.argwhere(accumulator > t_count)
+    rho_idxs, theta_idxs = lines[:, 0], lines[:, 1]
+    r, t = rhos[rho_idxs], thetas[theta_idxs]
+
+    return accumulator, thetas, rhos, lane_exist
+
+def HoughLine3(image):
+
+    lane_exist = False
+    # edge_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+
+    # edge_image = cv2.GaussianBlur(image, (3, 3), 1)
+    # edge_image = cv2.Canny(edge_image, 100, 200)
+
+    # edge_image = cv2.dilate(
+    #     edge_image,
+    #     cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)),
+    #     iterations=1
+    # )
+    # edge_image = cv2.erode(
+    #     edge_image,
+    #     cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)),
+    #     iterations=1
+    # )
+    # edge_points = np.argwhere(edge_image != 0)
+    # # cv2.imwrite("edge_img.jpg")
+    
+    # if edge_points.any():
+    #     lane_exist = True
+    # else: 
+    #     lane_exist = lane_exist
+    
+    lines = cv2.HoughLines(image, 1, np.pi / 180, 3)
+    # print(lines)
+
+    NoneType = type(None)
+    if type(lines) == NoneType:
+        # print("Yes i was here")
+        rho = 0 
+        theta = 0 
+        return rho, theta, lane_exist
+    else:
+        for rho, theta in lines[0]:
+            # print("rho:: {}, theta::: {}".format(rho, theta))
+        # print("debugging========================", lines[0])
+        # print("debugging =====================", len(lines[0]))
+        # rho = lines[0][0]
+        # theta = lines[0][1]
+
+            return rho, theta, lane_exist
 
 def embedding_post_process(embedding, bin_seg, band_width=0.1, max_num_lane=5):
     """
@@ -147,7 +281,7 @@ def palpha2alpha(phi_vec):
     return: phi angle in radians
     """
     
-    phi_idx = np.argmax(phi_vec)
+    phi_idx = np.argmax(phi_vec) + 1
 
     alpha = (2 * np.pi / 10) * phi_idx
     return alpha 

@@ -585,7 +585,6 @@ def validate(model2d, model3d, val_loader, cfg, p, device):
 
 def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, scheduler2, L1loss, BCEloss, CEloss, m, p, device,  best_fmeasure, optimizer1 = None, scheduler1 = None):
      #init best measure before the start of the training
-    print(model2d)
     # print(model2d)
     batch_loss = 0.0 
     tr_loss = 0.0 

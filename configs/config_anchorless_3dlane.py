@@ -149,7 +149,7 @@ vis_frequency = 100
 train_log_frequency = 10
 
 #if the predictions needs to be normalized
-normalize = True
+normalize = False
 enable_clip = False
 allign_corners = False
 visualize_activations = True
@@ -157,9 +157,9 @@ fix_branch = True
 weighted_loss = True
 
 # #Hyperparams
-epochs = 50
-batch_size = 8
-num_workers = 8
+epochs = 100
+batch_size = 1
+num_workers = 1
 l2_lambda = 1e-4
 lr = 0.001
 lrs_cd = 0

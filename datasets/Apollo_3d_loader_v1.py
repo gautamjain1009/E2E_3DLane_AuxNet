@@ -83,17 +83,17 @@ class Visualization(object):
         gt_visibility_mat = np.zeros((cnt_gt, 100))
                 
         # resample gt and pred at y_samples
-        for i in range(cnt_gt):
-            min_y = np.min(np.array(gt_lanes[i])[:, 1])
-            max_y = np.max(np.array(gt_lanes[i])[:, 1])
-            x_values, z_values, visibility_vec = resample_laneline_in_y(np.array(gt_lanes[i]), self.y_samples, out_vis=True)
+        # for i in range(cnt_gt):
+        #     min_y = np.min(np.array(gt_lanes[i])[:, 1])
+        #     max_y = np.max(np.array(gt_lanes[i])[:, 1])
+        #     x_values, z_values, visibility_vec = resample_laneline_in_y(np.array(gt_lanes[i]), self.y_samples, out_vis=True)
             
-            gt_lanes[i] = np.vstack([x_values, z_values]).T
-            gt_visibility_mat[i, :] = np.logical_and(x_values >= self.x_min,
-                                                       np.logical_and(x_values <= self.x_max,
-                                                                      np.logical_and(self.y_samples >= min_y,
-                                                                                     self.y_samples <= max_y)))
-            gt_visibility_mat[i, :] = np.logical_and(gt_visibility_mat[i, :], visibility_vec)
+        #     gt_lanes[i] = np.vstack([x_values, z_values]).T
+        #     gt_visibility_mat[i, :] = np.logical_and(x_values >= self.x_min,
+        #                                                np.logical_and(x_values <= self.x_max,
+        #                                                               np.logical_and(self.y_samples >= min_y,
+        #                                                                              self.y_samples <= max_y)))
+        #     gt_visibility_mat[i, :] = np.logical_and(gt_visibility_mat[i, :], visibility_vec)
 
         flag = False     
         dummy_image = im_ipm.copy()
@@ -111,8 +111,8 @@ class Visualization(object):
 
         for i in range(cnt_gt):
             x_values = np.array(gt_lanes[i])[:, 0]
-            z_values = np.array(gt_lanes[i])[:, 1]
-            
+            y_values = np.array(gt_lanes[i])[:, 1]
+            z_values = np.array(gt_lanes[i])[:, 2]
             
             # TODO: remove this condition later
             if flag == True:
@@ -123,42 +123,42 @@ class Visualization(object):
 
             else:
                 x_ipm_values = x_values
-                y_ipm_values = self.y_samples
+                y_ipm_values = y_values
 
             #for vis on IPM image
-            x_ipm_values, y_ipm_values = homographic_transformation(self.H_g2ipm, x_ipm_values[:100], y_ipm_values)
+            x_ipm_values, y_ipm_values = homographic_transformation(self.H_g2ipm, x_ipm_values, y_ipm_values)
             x_ipm_values = x_ipm_values.astype(np.int)
             y_ipm_values = y_ipm_values.astype(np.int)
 
             #for vis on original image
-            x_2d, y_2d = projective_transformation(P_gt, x_values[:100], self.y_samples, z_values[:100])
+            x_2d, y_2d = projective_transformation(P_gt, x_values, y_values, z_values)
             x_2d = x_2d.astype(np.int)
             y_2d = y_2d.astype(np.int)
 
             #draw on 2d image
             for k in range(1, x_2d.shape[0]):
                 # only draw the visible portion
-                if gt_visibility_mat[i, k - 1] and gt_visibility_mat[i, k]:
+                # if gt_visibility_mat[i, k - 1] and gt_visibility_mat[i, k]:
                     #check if the point is in the image
-                    if 0 <= x_2d[k] <= img.shape[1] and 0<= y_2d[k] <= img.shape[0] and  0 <= x_2d[k-1] <= img.shape[1] and 0 <= y_2d[k-1] <= img.shape[0]:
-                        img = cv2.line(img, (x_2d[k - 1], y_2d[k - 1]), (x_2d[k], y_2d[k]), [255,0,0], 3)
+                if 0 <= x_2d[k] <= img.shape[1] and 0<= y_2d[k] <= img.shape[0] and  0 <= x_2d[k-1] <= img.shape[1] and 0 <= y_2d[k-1] <= img.shape[0]:
+                    img = cv2.line(img, (x_2d[k - 1], y_2d[k - 1]), (x_2d[k], y_2d[k]), [255,0,0], 3)
 
             # draw on ipm
             for k in range(1, x_ipm_values.shape[0]):
                 # print("first loop", vis)
                 # only draw the visible portion
-                if gt_visibility_mat[i, k - 1] and gt_visibility_mat[i, k] and z_values[k] < gt_cam_height:
+                # if gt_visibility_mat[i, k - 1] and gt_visibility_mat[i, k] and z_values[k] < gt_cam_height:
                     # print("print here", vis)
                     #TODO: Verify - or + for the value for delta_z
-                    dummy_image = cv2.line(dummy_image, (x_ipm_values[k - 1], y_ipm_values[k - 1]),
-                                (x_ipm_values[k], y_ipm_values[k]), (255,0,0), 1)
+                dummy_image = cv2.line(dummy_image, (x_ipm_values[k - 1], y_ipm_values[k - 1]),
+                            (x_ipm_values[k], y_ipm_values[k]), (255,0,0), 1)
 
-            # draw in 3d
+            # # draw in 3d
             # ax1.plot(x_values[np.where(gt_visibility_mat[i, :])],
             #         self.y_samples[np.where(gt_visibility_mat[i, :])],
             #         z_values[np.where(gt_visibility_mat[i, :])], color= 'green', linewidth=1)
             ax1.plot(x_values,
-                    self.y_samples,
+                    y_values,
                     z_values, color= 'green', linewidth=1)
 
 
@@ -217,10 +217,12 @@ class CalculateDistanceAngleOffests(object):
         # print("Checking the shape of original image: ", img.shape)
 
         img = cv2.warpPerspective(img, self.H_crop, (self.resize_w, self.resize_h))
+        cv2.imwrite("report_image.jpg", img)
         # print("Checking the shape of cropped image: ", img.shape)     
 
         # img = img.astype(np.float) / 255
         im_ipm = cv2.warpPerspective(img, H_im2ipm, (self.ipm_w, self.ipm_h))
+        cv2.imwrite("report_image_ipm.jpg", im_ipm)
         # im_ipm = np.clip(im_ipm, 0, 1)
         cnt_gt = len(gt_lanes)
         gt_visibility_mat = np.zeros((cnt_gt, 100))
@@ -308,7 +310,7 @@ class GeneratePertile():
 
     def generategt_pertile(self, gt_lanes, img , gt_cam_height, gt_cam_pitch):
         bev_projected_lanes, dz_dict = self.calculate_bev_projection.draw_bevlanes(gt_lanes, img,  gt_cam_height, gt_cam_pitch, self.color_list) ## returns an image array of gt lanes projected on BEV
-        # cv2.imwrite("/home/gautam/Thesis/E2E_3DLane_AuxNet/datasets/complete_lines_test1001.jpg" , bev_projected_lanes)
+        # cv2.imwrite("/home/ims-robotics/Documents/gautam/E2E_3DLane_AuxNet/datasets/complete_lines_test1001.jpg" , bev_projected_lanes)
 
         ##init gt arrays for rho, phi and classification score and delta_z
         grid_x = int(bev_projected_lanes.shape[0]/self.tile_size)
@@ -322,14 +324,16 @@ class GeneratePertile():
         
         bev_projected_lanes = bev_projected_lanes[:,:,0] #(416/32,256/32) --- (13,8)
         
-        for r in range(0,bev_projected_lanes.shape[0],self.tile_size): ### r === 13 times
-            for c in range(0,bev_projected_lanes.shape[1],self.tile_size): ### c == 8 times
-                # cv2.imwrite(f"/home/gautam/Thesis/E2E_3DLane_AuxNet/datasets/test/img{r}_{c}.png",bev_projected_lanes[r:r+32, c:c+32])
+        for r in range(0,bev_projected_lanes.shape[0],self.tile_size): 
+            for c in range(0,bev_projected_lanes.shape[1],self.tile_size):
+                # image_name = "img" + str(r) + "_" + str(c) + ".jpg"
+                # cv2.imwrite("/home/ims-robotics/Documents/gautam/E2E_3DLane_AuxNet/datasets/hough_infer/" + image_name ,bev_projected_lanes[r:r+32, c:c+32])
                 
-                #TODO: replace 32 by self.tile_size
+                global_context = np.sqrt((r + 8)**2 + (c + 8) **2)
                 check_line_chords = np.argwhere(bev_projected_lanes[r:r+self.tile_size, c:c+self.tile_size] >0)
                 tile_img = bev_projected_lanes[r:r+self.tile_size, c:c+self.tile_size]
-                
+                # print(np.unique(tile_img))
+                # print("======================> checking the shape of the tile_image", tile_img.shape)
                 dz = []
                 if r == 0 and c == 0:
                     #find delta_z from line_chords
@@ -353,16 +357,24 @@ class GeneratePertile():
                 else:
                     mean_del_z = 0
 
-                accumulator, thetas, rhos, lane_exist = HoughLine(tile_img)
+                accumulator, thetas, rhos, lane_exist = HoughLine(tile_img.copy())
+                # print(image_name)
+                
+                # accumulator, thetas, rhos, lane_exist = HoughLine2(tile_img.copy())
+                
+                
                 idx = np.argmax(accumulator)
 
                 rho = int(rhos[int(idx / accumulator.shape[1])])
                 theta = thetas[int(idx % accumulator.shape[1])] #radians
-
+                
+                # print("rho::{}, theta::{}".format(rho, theta))
+                
                 x_idx = int(r/self.tile_size)
                 y_idx = int(c/self.tile_size)
-                gt_rho[x_idx,y_idx] = rho
-                phi_vec = binprob(self.n_bins, theta)
+                gt_rho[x_idx,y_idx] = rho + global_context
+                phi_vec = binprob(self.n_bins, np.deg2rad(theta))
+                # print("Checking the value of phi_vec in the generate function", phi_vec)
                 gt_phi[:,x_idx,y_idx][:, np.newaxis] = phi_vec
                     
                 if lane_exist == True:
@@ -431,6 +443,11 @@ class Apollo3d_loader(Dataset):
         
         #extract image keys from the json file
         self.image_keys = [data['raw_file'] for data in json_data]
+        
+        """
+        #just to ensure overfitting over one sample TODO: Add a condition for that
+        """
+        # self.image_keys = self.image_keys[0]
 
         self.data = {l['raw_file']: l for l in json_data}
     
@@ -451,6 +468,7 @@ class Apollo3d_loader(Dataset):
 
     def __len__(self):
         return len(self.image_keys)
+        # return 1
 
     def __getitem__(self, idx):
         batch = {}
@@ -472,9 +490,9 @@ class Apollo3d_loader(Dataset):
         batch.update({"gt_height":torch.from_numpy(gt_camera_height)})
         batch.update({"gt_pitch":torch.from_numpy(gt_camera_pitch)})
         
-        #TODO: correct the data representation of lane points while in the need of visulization
         gt_lanelines = gtdata['laneLines']
         batch.update({'gt_lanelines':gt_lanelines.copy()})
+
         gt_lateral_offset, gt_lateral_angleoffset, gt_cls_score, gt_lane_class, gt_delta_z = self.generate_pertile.generategt_pertile(gt_lanelines, img.copy(), gt_camera_height, gt_camera_pitch)
 
         norm_gt_lateral_offset = self.normalize(gt_lateral_offset, self.cfg.min_lateral_offset, self.cfg.max_lateral_offset)
@@ -563,14 +581,15 @@ if __name__ == "__main__":
     cfgs = Config.fromfile(config_path)
     vis = Visualization(cfgs.org_h, cfgs.org_w, cfgs.resize_h, cfgs.resize_w, cfgs.K, cfgs.ipm_w, cfgs.ipm_h, cfgs.crop_y, cfgs.top_view_region)
     dataset = Apollo3d_loader(data_root, data_splits, cfg = cfgs, phase = 'train')
-    loader = DataLoader(dataset, batch_size=4, shuffle=True, num_workers=4, collate_fn=collate_fn, prefetch_factor=1, persistent_workers=True)
+    loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=1, collate_fn=collate_fn, persistent_workers=True, prefetch_factor = cfgs.prefetch_factor)
 
     """
     Below code can be used to debug, verify and visualize the gt generating
     """
     start_point = time.time()
     for i, data in enumerate(loader):
-        print("check the bumber of iterations i fetch the batch:::::",i)
+            # print("========>",i)
+        print(" =====================> check the bumber of iterations i fetch the batch:::::",i)
         vis_rho_pred = data[5] #---> (b,13,8)
         vis_delta_z_pred = data[9] #--> (b,13,8)
         vis_cls_score_pred = data[7] # --> (b,13,8)
@@ -579,74 +598,97 @@ if __name__ == "__main__":
         vis_lane_class = data[8]
         vis_cam_height = data[2].cpu().numpy()
         vis_cam_pitch = data[3].cpu().numpy()
+        
+        
         print(data[10])
+        print("=======================> checking the shaoe of phi tensor", vis_phi_pred.shape)
+        # print(vis_rho_pred)
+
 
         for b in range(vis_rho_pred.shape[0]):
             vis_img_path = data[10][b]
 
-            print("Sanity check if the correct image is used for gt", vis_img_path)
-            vis_img = cv2.imread(vis_img_path)
-            
-            #offset predictions
-            vis_rho_pred_b = vis_rho_pred[b,:,:].detach().cpu().numpy()
-            vis_phi_pred_b = vis_phi_pred[b,:,:,:].detach().cpu().numpy()
-            vis_delta_z_pred_b = vis_delta_z_pred[b,:,:].detach().cpu().numpy()
-            vis_cls_score_pred_b = vis_cls_score_pred[b,:,:].detach().cpu().numpy()
-            
-            #unormalize the rho and delta z
-            if cfgs.normalize == True: ##TODO: off the normalize
-                vis_rho_pred_b = vis_rho_pred_b * (cfgs.max_lateral_offset - cfgs.min_lateral_offset) + cfgs.min_lateral_offset
-                vis_delta_z_pred_b = vis_delta_z_pred_b * (cfgs.max_delta_z - cfgs.min_delta_z) + cfgs.min_delta_z
-            else: 
-                vis_rho_pred_b = vis_rho_pred_b
-                vis_delta_z_pred_b = vis_delta_z_pred_b
+        print("Sanity check if the correct image is used for gt", vis_img_path)
+        vis_img = cv2.imread(vis_img_path)
+        
+        #offset predictions
+        vis_rho_pred_b = vis_rho_pred[b,:,:].detach().cpu().numpy()
+        vis_phi_pred_b = vis_phi_pred[b,:,:,:].detach().cpu().numpy()
+        vis_delta_z_pred_b = vis_delta_z_pred[b,:,:].detach().cpu().numpy()
+        vis_cls_score_pred_b = vis_cls_score_pred[b,:,:].detach().cpu().numpy()
+        print(vis_phi_pred_b.shape)
 
-            vis_cam_height_b = vis_cam_height[b]
-            vis_cam_pitch_b = vis_cam_pitch[b]
-            
-            #Cluster the tile embedding as per lane class
-            # return the tile labels: 0 marked as no lane
-            # clustered_tiles = embedding_post_process(vis_embedding_b, vis_cls_score_pred_b) 
-            ## replace this by lane_gt_cls tensor 
-            clustered_tiles = vis_lane_class[b,:,:].cpu().numpy()
-            
-            print("check if the num of lanes::",clustered_tiles)
-            
-            #extract points from predictions
-            points = [] ## ---> [[points lane1 (lists)], [points lane2(lists))], ...]
-            for i, lane_idx in enumerate(np.unique(clustered_tiles)): #must loop as the number of lanes present in the scene, max == 5
-                if lane_idx == 0: #no lane ::ignored
-                    continue
-                curr_idx = np.where(clustered_tiles == lane_idx) # --> tuple (rows, comumns) idxs
-                # print("lenght of the lane nidices", len(curr_idx[0]))
-                rho_lane_i = vis_rho_pred_b[curr_idx[0], curr_idx[1]]
-                # print("lenght of rho values or this points", len(rho_lane_i))
-                phi_vec_lane_i =vis_phi_pred_b[:,curr_idx[0], curr_idx[1]] # ---> 1d array of 10 elements containing probs 
-                phi_lane_i = [palpha2alpha(phi_vec_lane_i[:,i]) for i in range(phi_vec_lane_i.shape[1])]
-                # print("lenght of phi values thus points", len(phi_lane_i))
-                delta_z_lane_i = vis_delta_z_pred_b[curr_idx[0], curr_idx[1]]
-                # print("check if the delta_z number thus points", len(delta_z_lane_i))
+        #unormalize the rho and delta z
+        if cfgs.normalize == True: ##TODO: off the normalize
+            vis_rho_pred_b = vis_rho_pred_b * (cfgs.max_lateral_offset - cfgs.min_lateral_offset) + cfgs.min_lateral_offset
+            vis_delta_z_pred_b = vis_delta_z_pred_b * (cfgs.max_delta_z - cfgs.min_delta_z) + cfgs.min_delta_z
+        else: 
+            vis_rho_pred_b = vis_rho_pred_b
+            vis_delta_z_pred_b = vis_delta_z_pred_b
 
-                points_lane_i = [polar_to_catesian(phi_lane_i[i], vis_cam_pitch_b, vis_cam_height_b, delta_z_lane_i[i], rho_lane_i[i]) for i in range(len(phi_lane_i))]
-                # print("check the total number of points for a lane", len(points_lane_i))
-                points.append(points_lane_i) 
-
-            print(len(points))
-            print("====================================")
-            print(len(data[4][0]))
+        vis_cam_height_b = vis_cam_height[b]
+        vis_cam_pitch_b = vis_cam_pitch[b]
+        
+        clustered_tiles = vis_lane_class[b,:,:].cpu().numpy()
+        
+        print("check if the num of lanes::",clustered_tiles)
+        print("check the values of rho", vis_rho_pred_b)
+        
+        #extract points from predictions
+        points = [] ## ---> [[points lane1 (lists)], [points lane2(lists))], ...]
+        for i, lane_idx in enumerate(np.unique(clustered_tiles)): #must loop as the number of lanes present in the scene, max == 5 0 1,2,3, 4,
+            if lane_idx == 0: #no lane ::ignored
+                continue
+            curr_idx = np.where(clustered_tiles == lane_idx) # --> tuple (rows, comumns) idxs
+            # print("lenght of the lane nidices", len(curr_idx[0]))
+            rho_lane_i = vis_rho_pred_b[curr_idx[0], curr_idx[1]]
+            # print("lenght of rho values or this points", len(rho_lane_i))
+            phi_vec_lane_i =vis_phi_pred_b[:,curr_idx[0], curr_idx[1]] # ---> 1d array of 10 elements containing probs 
+                # phi_vec_lane_i =vis_phi_pred_b[:,curr_idx[0], curr_idx[1]] # ---> 1d array of 10 elements containing probs 
+            phi_vec_lane_i =vis_phi_pred_b[:,curr_idx[0], curr_idx[1]] # ---> 1d array of 10 elements containing probs 
             
+            # print("sahpe pf phi vector for one lane", phi_vec_lane_i.shape)
+            # phi_lane_i = []
+            phi_lane_i = [palpha2alpha(phi_vec_lane_i[:,i]) for i in range(phi_vec_lane_i.shape[1])]
+            for i in range(phi_vec_lane_i.shape[1]):
+                print(phi_vec_lane_i[:,i])
+            
+        #     # break
+            print("lenght of phi values thus points", phi_lane_i)
+            delta_z_lane_i = vis_delta_z_pred_b[curr_idx[0], curr_idx[1]]
+            # print(delta_z_lane_i.shape)
+            # print("check if the delta_z number thus points", len(delta_z_lane_i))
+            
+            print("===============>",vis_cam_pitch_b)
+            print("===============>", vis_cam_height_b)
+            points_lane_i = [polar_to_catesian(phi_lane_i[i], vis_cam_pitch_b, vis_cam_height_b, delta_z_lane_i[i], rho_lane_i[i]) for i in range(len(phi_lane_i))]
+            # print("check the total number of points for a lane", len(points_lane_i))
+            points.append(points_lane_i) 
 
-            print("=============================")
-            print("checking the number of points in gt lane points for first lane", len(data[4][b][0]))
-            #list containing arrays of lane points
-            #TODO: obtain a single plot with all the plots
-            # cv2.imwrite("vis_sanity_check_rgb.jpg", vis_img.copy())
-            # pred_fig = vis.draw_lanes(points, vis_img.copy(), vis_cam_height_b, vis_cam_pitch_b)
-            # pred_fig = mplfig_to_npimage(pred_fig)
-            # cv2.imwrite("vis_gt_sanity_check.jpg", pred_fig)
+        print("Check the number of points in lane ==============>", len(points))
+        fig1 = plt.figure(figsize=(10, 10))
+        ax2 = fig1.add_subplot(131, projection='3d')
+        ax1 = fig1.add_subplot(132)
+        for i in range(len(points)):
+            x_values = np.array(points[i])[:, 0]
+            y_values = np.array(points[i])[:, 1]
+            z_values = np.array(points[i])[:, 2]
 
-            pred_fig_real = vis.draw_lanes(data[4][b], vis_img.copy(), vis_cam_height_b, vis_cam_pitch_b)
-            pred_fig_real = mplfig_to_npimage(pred_fig_real)
-            cv2.imwrite("sanity_check_real_gt.jpg", pred_fig_real)
-            break
-        break
+            ax2.plot(x_values, y_values, z_values, color = 'green', linewidth = 1 )
+            ax1.plot(x_values, y_values)
+
+        pred_fig = mplfig_to_npimage(fig1)
+        cv2.imwrite("potter.jpg", pred_fig)
+
+        # list containing arrays of lane points
+        # TODO: obtain a single plot with all the plots
+        # cv2.imwrite("vis_sanity_check_rgb.jpg", vis_img.copy())
+        print(points)
+        pred_fig = vis.draw_lanes(points, vis_img.copy(), vis_cam_height_b, vis_cam_pitch_b)
+        pred_fig = mplfig_to_npimage(pred_fig)
+        cv2.imwrite("vis_gt_sanity_check.jpg", pred_fig)
+
+        pred_fig_real = vis.draw_lanes(data[4][b], vis_img.copy(), vis_cam_height_b, vis_cam_pitch_b)
+        pred_fig_real = mplfig_to_npimage(pred_fig_real)
+        cv2.imwrite("sanity_check_real_gt.jpg", pred_fig_real)
+        assert 0
