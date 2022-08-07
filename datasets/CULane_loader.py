@@ -16,7 +16,6 @@ from .registry import DATASETS, Process
 """
 The below code is modified from https://github.com/Turoad/lanedet/blob/main/lanedet/datasets/culane.py
 """
-
  
 LIST_FILE = {
     'train': 'list/train_gt.txt',
@@ -91,7 +90,7 @@ class CULaneLoader(Dataset):
     def __len__(self):
         return len(self.data_infos)
 
-    def __get_item__(self, index):
+    def __getitem__(self, index):
 
         batch = {} 
 
@@ -130,7 +129,20 @@ class CULaneLoader(Dataset):
 
         batch.update({"full_img_path": sample['img_path']})
 
-        return batch 
+        return batch
 
+# if __name__ == "__main__":
+#     # unit test
+#     # will be added in config
+#     root = "/home/ims-robotics/Documents/gautam/dataset/culane" 
+#     split = "train"
 
+#     tusimple = CULaneLoader(root, split, transform= False)
+# #     # # print(len(tusimple)) 
+
+# #     # loader = DataLoader(tusimple, batch_size =4, num_workers=1, collate_fn = collate_fn)
+#     loader = DataLoader(tusimple, batch_size =4, num_workers=4)
+#     print(len(loader))
+#     for i,j in enumerate(loader):
+#         print(j.keys())
 

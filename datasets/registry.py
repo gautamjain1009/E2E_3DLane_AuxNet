@@ -33,7 +33,7 @@ def build(cfg, registry, default_args=None):
 #     return batch
 
 def build_dataset(split_cfg, cfg):
-    # print(DATASETS)
+    print(DATASETS)
     return build(split_cfg, DATASETS, default_args=dict(cfg=cfg))
 
 def build_dataloader(split_cfg, cfg, is_train=True):
