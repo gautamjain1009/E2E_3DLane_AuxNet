@@ -62,7 +62,7 @@ featuremap_out_stride = 8
 
 backbone = dict(
     type='ResNetWrapper',
-    resnet_variant='resnet18',
+    resnet_variant='resnet34',
     pretrained=True,
     replace_stride_with_dilation=[False, True, True],
     out_conv=True,

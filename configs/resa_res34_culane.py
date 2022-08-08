@@ -18,7 +18,7 @@ sample_y = range(710,150, -10)
 thr = 0.6
 
 train_augmentation = [
-    dict(type='RandomRotation'),
+    dict(type='RandomRotation', degree=(-2, 2)),
     dict(type='RandomHorizontalFlip'),
     dict(type='Resize', size=(img_width, img_height)),
     dict(type='Normalize', img_norm=img_norm),
@@ -31,25 +31,25 @@ val_augmentation = [
     dict(type='ToTensor')
 ] 
 
-dataset_path = '/home/ims-robotics/Documents/gautam/dataset/tusimple'
+dataset_path = '/home/ims-robotics/Documents/gautam/dataset/culane'
 
 dataset = dict(
     train=dict(
-        type='TusimpleLoader',
+        type='CULaneLoader',
         data_root=dataset_path,
-        split='trainval',
+        split='train',
         transform = train_augmentation
     ),
     val=dict(
-        type='TusimpleLoader',
+        type='CULaneLoader',
         data_root=dataset_path,
-        split='test',
+        split='val',
         transform = val_augmentation
     ),
     test=dict(
-        type='TusimpleLoader',
+        type='CULaneLoader',
         data_root=dataset_path,
-        split='test',
+        split='val',
         transform = val_augmentation
     )
 )
@@ -62,10 +62,11 @@ featuremap_out_stride = 8
 
 backbone = dict(
     type='ResNetWrapper',
-    resnet_variant='resnet18',
+    resnet_variant='resnet34',
     pretrained=True,
     replace_stride_with_dilation=[False, True, True],
     out_conv=True,
+    in_channels=[64, 128, 256, -1],
     featuremap_out_channel = 128)
 
 aggregator = dict(type= "RESA",
@@ -83,13 +84,12 @@ workers = 8
 num_classes = 1 + 1
 # ignore_label = 255
 
-test_json_file='/home/ims-robotics/Documents/gautam/dataset/tusimple/test_label.json'
 
 ###logging params
 date_it = "25_March_" #TODO: remove it from argparse
 train_run_name = "r18_scnn_pdec_2dLane" + date_it
-val_frequency = 400
-train_log_frequency = 20
+val_frequency = 2500
+train_log_frequency = 200
 
 #Hyperparams
 epochs = 100

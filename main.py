@@ -125,7 +125,10 @@ def validate(model, device, data_loader, loss_f, cfg):
             else:
                 #calcualte IOU
                 metric_batch = iou(torch.argmax(val_seg_out,1), val_gt_mask)
-                Iou_batch_list.append(metric_batch)
+                if isinstance(metric_batch, float) :
+                    continue
+                else: 
+                    Iou_batch_list.append(metric_batch)
             
             # val_seg_loss = loss_f(torch.max(val_seg_out, dim =1)[0], val_gt_mask)
             val_seg_loss = loss_f(val_seg_out, val_gt_mask)

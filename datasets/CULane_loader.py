@@ -19,7 +19,7 @@ The below code is modified from https://github.com/Turoad/lanedet/blob/main/lane
  
 LIST_FILE = {
     'train': 'list/train_gt.txt',
-    'val': 'list/test.txt',
+    'val': 'list/val_gt.txt',
     'test': 'list/test.txt',
 } 
 
