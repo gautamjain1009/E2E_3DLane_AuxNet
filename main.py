@@ -264,7 +264,8 @@ def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, 
 
                         torch.save(model.state_dict(),checkpoint_save_path)
         
-            wandb.log({'Validation_loss': val_avg_loss,}, commit=False)
+            wandb.log({'Validation_loss': val_avg_loss}, commit=False)
+            wandb.log({'IoU: validation': Iou_val}, commit=False)
             
             scheduler.step(val_avg_loss.item())
 
@@ -309,7 +310,7 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
 
     #trained model paths
-    checkpoints_dir = './nets/checkpoints'
+    checkpoints_dir = './nets/checkpoints/' + cfg.train_run_name
     result_model_dir = './nets/model_itr'
     os.makedirs(checkpoints_dir, exist_ok=True)
     os.makedirs(result_model_dir, exist_ok=True)

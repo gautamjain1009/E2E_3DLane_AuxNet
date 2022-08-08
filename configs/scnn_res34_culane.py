@@ -84,8 +84,8 @@ aggregator = dict(type= "SCNN")
 heads = dict(type = 'PlainDecoder')
 
 ###logging params
-date_it = "7_August_"
-train_run_name = "r18_nodrop_scnn_binary_2dLane_imgnet_meanstd_b16" + date_it
+date_it = "_7_August_"
+train_run_name = "SCNN_Res34_culane" + date_it
 val_frequency = 2500
 train_log_frequency = 200
 

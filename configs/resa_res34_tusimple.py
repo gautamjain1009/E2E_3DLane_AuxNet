@@ -86,8 +86,8 @@ num_classes = 1 + 1
 test_json_file='/home/ims-robotics/Documents/gautam/dataset/tusimple/test_label.json'
 
 ###logging params
-date_it = "25_March_" #TODO: remove it from argparse
-train_run_name = "r18_scnn_pdec_2dLane" + date_it
+date_it = "_25_March_"
+train_run_name = "RESA_Res34_tusimple_b8" + date_it
 val_frequency = 400
 train_log_frequency = 20
 

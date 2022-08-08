@@ -86,7 +86,7 @@ heads = dict(type = 'PlainDecoder')
 
 ###logging params
 date_it = "5 July_"
-train_run_name = "r18_nodrop_scnn_binary_2dLane_imgnet_meanstd_b16" + date_it
+train_run_name = "SCNN_res18_tusimple_b16" + date_it
 val_frequency = 200
 train_log_frequency = 200
 
