@@ -83,7 +83,8 @@ class LaneDataset(Dataset):
                 label_map = cv2.line(label_map,
                                  (int(x_2d[j]), int(y_2d[j])), (int(x_2d[j+1]), int(y_2d[j+1])),
                                  color=np.asscalar(gt_labels[i]), thickness=3)
-
+        
+        label_map = self.binary_segmask(label_map)
         label_map = torch.from_numpy(label_map.astype(np.int32)).contiguous().long()
 
         # if self.transform:
@@ -97,6 +98,18 @@ class LaneDataset(Dataset):
         batch.update({'full_img_path':img_name})
         # return image, label_map
         return batch
+
+    def binary_segmask(self,mask_i):    
+        #assuming there are at max 6 lanes in the dataset
+
+        mask_i[mask_i ==1] = 1
+        mask_i[mask_i ==2] = 1
+        mask_i[mask_i ==3] = 1
+        mask_i[mask_i ==4] = 1
+        mask_i[mask_i ==5] = 1
+        mask_i[mask_i ==6] = 1
+    
+        return mask_i 
 
     def init_dataset_3D(self, dataset_base_dir, json_file_path):
         """

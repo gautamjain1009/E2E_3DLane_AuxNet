@@ -2,6 +2,7 @@
 
 from contextlib import redirect_stderr
 from pprint import pprint
+from re import L
 import torch 
 import cv2 
 from tqdm import tqdm
@@ -26,6 +27,9 @@ logging.basicConfig(level = logging.DEBUG)
 #build import for different modules
 from datasets.registry import build_dataloader
 from models.build_model import load_model
+
+#import for sim3d loader 
+from datasets.sim3d_binseg_loader import LaneDataset
 
 def pprint_seconds(seconds):
     hours = seconds // 3600
@@ -293,7 +297,8 @@ if __name__ == "__main__":
     parser.add_argument("--no_wandb", dest="no_wandb", action="store_true", help="disable wandb")
     parser.add_argument("--seed", type=int, default=27, help="random seed")
     parser.add_argument("--baseline", type=bool, default=False, help="enable baseline")
-   
+    parser.add_argument("--dataset", type=str, default="culane-tusimple", help="random seed")
+
     #parsing args
     args = parser.parse_args()
 
@@ -315,9 +320,25 @@ if __name__ == "__main__":
     os.makedirs(checkpoints_dir, exist_ok=True)
     os.makedirs(result_model_dir, exist_ok=True)
 
-    # dataloader
-    train_loader = build_dataloader(cfg.dataset.train, cfg, is_train = True)
-    val_loader = build_dataloader(cfg.dataset.val, cfg, is_train = False)
+    if args.dataset == "culane-tusimple":
+        # dataloader for tusimple and culane
+        print("Using TuSimple or CUlane Dataset ================>")
+        train_loader = build_dataloader(cfg.dataset.train, cfg, is_train = True)
+        val_loader = build_dataloader(cfg.dataset.val, cfg, is_train = False)
+    
+    elif args.dataset == 'sim3d':
+        #dataloader for Apollo sim 3d dataset 
+        print("using Apollo Sim3D dataset ====================>")
+        train_dataset = LaneDataset(cfg, cfg.dataset_path, cfg.train_file, data_aug=True)
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=cfg.batch_size,
+                                           shuffle=True, num_workers=cfg.workers, pin_memory=False, drop_last=True)
+
+        val_dataset = LaneDataset(cfg, cfg.dataset_path, cfg.val_file, data_aug=False)
+        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=cfg.batch_size,
+                                                shuffle=False, num_workers=cfg.workers, pin_memory=False)
+        val_loader.is_testing = True
+
+        #dataloader for 
 
     train_loader_len = len(train_loader)
     val_loader_len = len(val_loader)
@@ -325,6 +346,11 @@ if __name__ == "__main__":
     print("===> batches in train loader", train_loader_len)
     print("===> batches in val loader", val_loader_len)
     
+    # for itr, data in enumerate(train_loader):
+    #     print(data['binary_mask'].shape)
+    #     print(data['img'].shape)
+    #     print(torch.unique(data['binary_mask']))
+
     model = load_model(cfg, baseline = args.baseline)
     model = model.to(device)
     
