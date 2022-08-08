@@ -7,11 +7,11 @@ img_norm = dict(
     std=[0.229, 0.224, 0.225]
 )
 
-img_height = 368
-img_width = 640
-cut_height = 160
-ori_img_h = 720
-ori_img_w = 1280
+img_height = 360
+img_width = 480
+cut_height = 240
+ori_img_h = 590
+ori_img_w = 1640
 
 #for vis
 sample_y = range(710,150, -10)
