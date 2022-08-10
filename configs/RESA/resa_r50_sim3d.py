@@ -28,19 +28,6 @@ thr = 0.6
 K = np.array([[2015., 0., 960.],
                        [0., 2015., 540.],
                        [0., 0., 1.]])
-# train_augmentation = [
-#     dict(type='RandomRotation'),
-#     dict(type='RandomHorizontalFlip'),
-#     dict(type='Resize', size=(img_width, img_height)),
-#     dict(type='Normalize', img_norm=img_norm),
-#     dict(type='ToTensor'),
-# ] 
-
-# val_augmentation = [
-#     dict(type='Resize', size=(img_width, img_height)),
-#     dict(type='Normalize', img_norm=img_norm),
-#     dict(type='ToTensor')
-# ] 
 
 dataset_path = '/home/ims-robotics/Documents/gautam/dataset/Apollo_Sim_3D_Lane_Release'
 
@@ -61,27 +48,6 @@ if type_split == "standard":
 #     val_file = os.path.join()
 
 
-# dataset = dict(
-#     train=dict(
-#         type='TusimpleLoader',
-#         data_root=dataset_path,
-#         split='trainval',
-#         transform = train_augmentation
-#     ),
-#     val=dict(
-#         type='TusimpleLoader',
-#         data_root=dataset_path,
-#         split='test',
-#         transform = val_augmentation
-#     ),
-#     test=dict(
-#         type='TusimpleLoader',
-#         data_root=dataset_path,
-#         split='test',
-#         transform = val_augmentation
-#     )
-# )
-
 """
 model params
 """
@@ -90,10 +56,11 @@ featuremap_out_stride = 8
 
 backbone = dict(
     type='ResNetWrapper',
-    resnet_variant='resnet18',
+    resnet_variant='resnet50',
     pretrained=True,
     replace_stride_with_dilation=[False, True, True],
     out_conv=True,
+    in_channels=[64, 128, 256, -1],
     featuremap_out_channel = 128)
 
 aggregator = dict(type= "RESA",
@@ -115,14 +82,14 @@ num_classes = 2
 test_json_file='/home/ims-robotics/Documents/gautam/dataset/tusimple/test_label.json'
 
 ###logging params
-date_it = "_8Aug_March_"
-train_run_name = "RESA_res18_sim3d_b8" + date_it
+date_it = "_11Aug_"
+train_run_name = "RESA_res50_sim3d_b8" + date_it
 val_frequency = 400
 train_log_frequency = 20
 
 #Hyperparams
-epochs = 100
-batch_size = 8 
+epochs = 60
+batch_size = 8
 l2_lambda = 1e-4
 log_frequency_steps = 200
 lr = 0.001 

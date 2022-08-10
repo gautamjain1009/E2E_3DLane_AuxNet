@@ -2,7 +2,6 @@
 
 from contextlib import redirect_stderr
 from pprint import pprint
-from re import L
 import torch 
 import cv2 
 from tqdm import tqdm

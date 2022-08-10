@@ -16,7 +16,6 @@ The below code is modified from: https://github.com/yuliangguo/Codes-for-Lane-De
 """
 class LaneDataset(Dataset):
     def __init__(self, args, dataset_path, json_file_path, transform=None, data_aug=False):
-        print(args.num_class)
         self.is_testing = ('test' in json_file_path) # 'val'
         self.num_class = args.num_class
 

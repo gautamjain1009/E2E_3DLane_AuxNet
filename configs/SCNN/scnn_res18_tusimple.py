@@ -85,14 +85,14 @@ aggregator = dict(type= "SCNN")
 heads = dict(type = 'PlainDecoder')
 
 ###logging params
-date_it = "5 July_"
+date_it = "_9Aug_"
 train_run_name = "SCNN_res18_tusimple_b16" + date_it
 val_frequency = 200
 train_log_frequency = 200
 
 #Hyperparams
-epochs = 100
-batch_size = 16
+epochs = 60
+batch_size = 8
 l2_lambda = 1e-4
 log_frequency_steps = 200
 lr = 0.001 
