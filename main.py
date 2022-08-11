@@ -361,13 +361,20 @@ if __name__ == "__main__":
         fraction of positve samples can be calculated as: target_mask.mean()
         posweight = 1 - fraction of 1s/ fraction of 1          
         """
-    if cfg.train_type == "binary":
-            
+    if cfg.train_type == "binary" and args.dataset == "culane-tusimple":
+        
+        print("Assinging weight to the classes for tusimple or Culane dataset")
         #NOTE: TO Use when binary segmentation and the output from the model has no activations and is just a single channel
         pos_weight = torch.tensor([1.0,19.0]).to(device) #basically it means that I have 19 positive samples and 1 negative sample
         # criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight).to(device)
         criterion = torch.nn.CrossEntropyLoss(weight = pos_weight).to(device)
+    elif cfg.train_type == "binary" and args.dataset == "sim3d":
 
+        print("Assigning weights to the classes for SIM3d")    
+        #NOTE: TO Use when binary segmentation and the output from the model has no activations and is just a single channel
+        pos_weight = torch.tensor([1.0,42.0]).to(device) #basically it means that I have 19 positive samples and 1 negative sample
+        # criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight).to(device)
+        criterion = torch.nn.CrossEntropyLoss(weight = pos_weight).to(device)
     else:
         # NOTE: TO use when multi class segmentation is done.
         criterion = torch.nn.NLLLoss().to(device)
