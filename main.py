@@ -3,6 +3,7 @@
 from contextlib import redirect_stderr
 from pprint import pprint
 import torch 
+import torch.nn as nn
 import cv2 
 from tqdm import tqdm
 import os 
@@ -29,6 +30,7 @@ from models.build_model import load_model
 
 #import for sim3d loader 
 from datasets.sim3d_binseg_loader import LaneDataset
+from utils.segmentation_loss import DiceLoss, FocalLoss
 
 def pprint_seconds(seconds):
     hours = seconds // 3600
@@ -36,12 +38,93 @@ def pprint_seconds(seconds):
     seconds = seconds % 60
     return f"{int(hours):1d}h {int(minutes):1d}min {int(seconds):1d}s"
 
+def one_hot_convert(label, device):
+    batch_size = label.shape[0]
+    n_classes = 2
+    h, w = label.shape[1], label.shape[2]
+
+    one_hot_label = label.clone()
+
+    one_hot_label = one_hot_label.unsqueeze(1)
+    one_hot = torch.zeros(batch_size, n_classes, h, w).to(device)
+
+    one_hot.scatter_(1, one_hot_label, 1)
+    return one_hot 
+
 def iou(mask1, mask2):
     intersection = (mask1 * mask2).sum()
     if intersection == 0:
         return 0.0
     union = torch.logical_or(mask1, mask2).to(torch.int).sum()
     return intersection / union
+
+class FastConfusionMatrix(object):
+    def _init_(self, num_classes):
+        self.num_classes = num_classes
+        self.inter, self.union, self.iou = None, None, None
+
+    def update(self, labels, outputs):
+        if self.iou is None:
+            self.set(labels.device)
+
+        with torch.no_grad():
+            labels += 1
+            outputs += 1
+
+            valid_idx = labels > 0
+            labels = labels[valid_idx].long()
+            outputs = outputs[valid_idx].long()
+
+            correct = labels * (outputs == labels).type(torch.long)
+            inter_area = correct.histc(
+                bins=self.num_classes, min=1, max=self.num_classes
+            )
+            label_area = labels.histc(
+                bins=self.num_classes, min=1, max=self.num_classes
+            )
+            infer_area = outputs.histc(
+                bins=self.num_classes, min=1, max=self.num_classes
+            )
+            union_area = label_area + infer_area - inter_area
+
+            self.inter += inter_area
+            self.union += union_area
+
+    def set(self, device):
+        self.inter = torch.zeros(
+            self.num_classes, dtype=torch.int64, device=device, requires_grad=False
+        )
+        self.union = torch.zeros(
+            self.num_classes, dtype=torch.int64, device=device, requires_grad=False
+        )
+        self.iou = torch.zeros(
+            self.num_classes, dtype=torch.int64, device=device, requires_grad=False
+        )
+
+    def reset(self):
+        self.inter.zero_()
+        self.union.zero_()
+        self.iou.zero_()
+
+    def get_metrics(self):
+        self.iou = 100 * self.inter / (1e-8 + self.union)
+        return self.iou.tolist(), self.iou.mean().item()
+
+    def reduce_from_all_processes(self):
+        if not torch.distributed.is_available():
+            return
+        if not torch.distributed.is_initialized():
+            return
+        torch.distributed.barrier()
+        torch.distributed.all_reduce(self.inter)
+        torch.distributed.all_reduce(self.union)
+
+    def _str_(self):
+        iu, miou = self.get_metrics()
+        return ("IoU: {}\n" "mean IoU: {:.1f}").format(
+            ["{:.1f}".format(i) for i in iu],
+            miou,
+        )
 
 def visualizaton(model, device, data_loader,cfg):
     ##TODO: add the visualization for overlays and gt also
@@ -102,7 +185,7 @@ def visualizaton(model, device, data_loader,cfg):
                 wandb.log({"validate Predictions":[wandb.Image(image) for image in images]})
                 break
 
-def validate(model, device, data_loader, loss_f, cfg):
+def validate(model, device, data_loader, loss_f, cfg, args):
     model.eval()         
     print(">>>>>>>>>Validating<<<<<<<<<")
     
@@ -126,15 +209,16 @@ def validate(model, device, data_loader, loss_f, cfg):
                 val_pred.extend(pred_out_list)
 
             else:
-                #calcualte IOU
+                 #calcualte IOU
                 metric_batch = iou(torch.argmax(val_seg_out,1), val_gt_mask)
+                print(metric_batch)
                 if isinstance(metric_batch, float) :
                     continue
                 else: 
                     Iou_batch_list.append(metric_batch)
             
             # val_seg_loss = loss_f(torch.max(val_seg_out, dim =1)[0], val_gt_mask)
-            val_seg_loss = loss_f(val_seg_out, val_gt_mask)
+                val_seg_loss = loss_f(val_seg_out, val_gt_mask)
 
             #NOTE: To be used when not using binary segmentation
             # val_seg_loss = loss_f(F.log_softmax(val_seg_out, dim =1), val_gt_mask.long())
@@ -154,7 +238,7 @@ def validate(model, device, data_loader, loss_f, cfg):
     return val_avg_loss, val_pred, val_data_IOU
    
 
-def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, cfg, criterion, metric ,Iou):
+def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, cfg, criterion, metric ,Iou, args):
     batch_loss = 0.0
     tr_loss = 0.0
     start_point = time.time()
@@ -185,7 +269,8 @@ def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, 
             print("Checking the shape of the input iamge to the mopdel", input_img.shape)
             
         with Timing(timings,"forward_pass"):
-            seg_out = model(input_img)
+            seg_out = model(input_img) #----> (batch_size, 2, h, w)
+
 
         with Timing(timings,"seg_loss"):
             
@@ -194,9 +279,10 @@ def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, 
             
             #NOTE: to use in the case if binary segmentation with BCElosswithlogits
             # seg_loss = criterion(torch.max(seg_out, dim =1)[0],gt_mask)
+            
             seg_loss = criterion(seg_out, gt_mask)
-
             print("seg_loss_train: ", seg_loss)
+
             # TODO: add a condition of lane exist loss
         
         with Timing(timings,"backward_pass"):    
@@ -234,7 +320,7 @@ def train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, 
             with Timing(timings, "validate"):
                 
                 #TODO: Later add more metrics for binary segmentation
-                val_avg_loss, val_pred, Iou_val = validate(model, device, val_loader, criterion, cfg)
+                val_avg_loss, val_pred, Iou_val = validate(model, device, val_loader, criterion, cfg, args)
                 
                 if cfg.train_type == "multi_class":
                 # evaluate 
@@ -296,7 +382,8 @@ if __name__ == "__main__":
     parser.add_argument("--no_wandb", dest="no_wandb", action="store_true", help="disable wandb")
     parser.add_argument("--seed", type=int, default=27, help="random seed")
     parser.add_argument("--baseline", type=bool, default=False, help="enable baseline")
-    parser.add_argument("--dataset", type=str, default="culane-tusimple", help="random seed")
+    parser.add_argument("--dataset", type=str, default="culane-tusimple", help="dataset used for training")
+    parser.add_argument("--loss", type=str, default="cross_entropy", help="loss function used for training")
 
     #parsing args
     args = parser.parse_args()
@@ -337,19 +424,12 @@ if __name__ == "__main__":
                                                 shuffle=False, num_workers=cfg.workers, pin_memory=False)
         val_loader.is_testing = True
 
-        #dataloader for 
-
     train_loader_len = len(train_loader)
     val_loader_len = len(val_loader)
     
     print("===> batches in train loader", train_loader_len)
     print("===> batches in val loader", val_loader_len)
     
-    # for itr, data in enumerate(train_loader):
-    #     print(data['binary_mask'].shape)
-    #     print(data['img'].shape)
-    #     print(torch.unique(data['binary_mask']))
-
     model = load_model(cfg, baseline = args.baseline)
     model = model.to(device)
     
@@ -361,20 +441,20 @@ if __name__ == "__main__":
         fraction of positve samples can be calculated as: target_mask.mean()
         posweight = 1 - fraction of 1s/ fraction of 1          
         """
-    if cfg.train_type == "binary" and args.dataset == "culane-tusimple":
+
+    if args.loss == "cross_entropy":
         
-        print("Assinging weight to the classes for tusimple or Culane dataset")
         #NOTE: TO Use when binary segmentation and the output from the model has no activations and is just a single channel
         pos_weight = torch.tensor([1.0,19.0]).to(device) #basically it means that I have 19 positive samples and 1 negative sample
         # criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight).to(device)
         criterion = torch.nn.CrossEntropyLoss(weight = pos_weight).to(device)
-    elif cfg.train_type == "binary" and args.dataset == "sim3d":
-
-        print("Assigning weights to the classes for SIM3d")    
-        #NOTE: TO Use when binary segmentation and the output from the model has no activations and is just a single channel
-        pos_weight = torch.tensor([1.0,42.0]).to(device) #basically it means that I have 19 positive samples and 1 negative sample
-        # criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight).to(device)
-        criterion = torch.nn.CrossEntropyLoss(weight = pos_weight).to(device)
+    elif args.loss == "focal":
+        print("Using Focal Loss ==========================>")
+        criterion = FocalLoss().to(device)
+        pass 
+    elif args.loss == "dice":
+        print("Using dice loss=================>")
+        criterion = DiceLoss(n_class = 2).to(device)
     else:
         # NOTE: TO use when multi class segmentation is done.
         criterion = torch.nn.NLLLoss().to(device)
@@ -399,7 +479,7 @@ if __name__ == "__main__":
         with torch.autograd.profiler.profile(enabled=False):
             with torch.autograd.profiler.emit_nvtx(enabled=False, record_shapes=False):
                 for epoch in tqdm(range(cfg.epochs)):                    
-                    M, I = train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, cfg, criterion, metric, Iou)
+                    M, I = train(model, device, train_loader, val_loader, scheduler, optimizer, epoch, cfg, criterion, metric, Iou, args)
 
                     metric = M 
                     Iou = I
