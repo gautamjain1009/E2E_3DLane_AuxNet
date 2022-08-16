@@ -37,7 +37,6 @@ def load_model(cfg, baseline = False, pretrained = False):
         # load the pretrained weights 
         print("=>loaded the pretrained weights for 2d model")
         model.load_state_dict(torch.load(cfg.pretrained_2dmodel_path))
-        pass 
      
     return model
 

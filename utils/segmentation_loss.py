@@ -50,6 +50,7 @@ class DiceLoss(torch.nn.Module):
         return target
 
 class FocalLoss(nn.Module):
+
     def __init__(self, gamma=2.0, alpha=0.25, size_average=True):
         super(FocalLoss, self).__init__()
         self.gamma = gamma
@@ -61,7 +62,7 @@ class FocalLoss(nn.Module):
         self.size_average = size_average
 
     def forward(self, input, target, ignore_index=-1):
-        
+
         """
         :param input: logits: N, C, H, W
         :param target: labels: N, H, W 
@@ -90,7 +91,8 @@ class FocalLoss(nn.Module):
         p_t = p_t.view(-1)
 
         loss = -1 * (1 - p_t).pow(self.gamma) * log_p_t
-
+        self.alpha = self.alpha.cuda()
+        
         if self.alpha is not None:
             target = target.view(-1).long()
             alpha_t = self.alpha.gather(0, target)  # ignored are already 0 (+++)
