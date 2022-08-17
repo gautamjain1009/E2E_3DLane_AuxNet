@@ -17,7 +17,9 @@ The below code is modified from: https://github.com/yuliangguo/Codes-for-Lane-De
 class LaneDataset(Dataset):
     def __init__(self, args, dataset_path, json_file_path, transform=None, data_aug=False):
         self.is_testing = ('test' in json_file_path) # 'val'
-        self.num_class = args.num_class
+        
+        #TODO: remove this hardcoding
+        self.num_class = 6
 
         # define image pre-processor
         self.totensor = transforms.ToTensor()
@@ -82,7 +84,6 @@ class LaneDataset(Dataset):
                 label_map = cv2.line(label_map,
                                  (int(x_2d[j]), int(y_2d[j])), (int(x_2d[j+1]), int(y_2d[j+1])),
                                  color=np.asscalar(gt_labels[i]), thickness=3)
-        
         label_map = self.binary_segmask(label_map)
         label_map = torch.from_numpy(label_map.astype(np.int32)).contiguous().long()
 
