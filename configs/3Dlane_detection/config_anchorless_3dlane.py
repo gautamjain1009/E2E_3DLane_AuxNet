@@ -3,58 +3,70 @@ import torch
 #TOOD: remove it later and verify it is of no use
 
 dataset_dir = "/home/gautam/e2e/lane_detection/3d_approaches/3d_dataset/Apollo_Sim_3D_Lane_Release"
-# #TODO: Optimize this config
-# """
-# Dataloader params
-# """
+#TODO: Optimize this config
 
-# #TODO: Mya be the mean and std values are not correct for the dataset
-# img_norm = dict(
-#     mean=[103.939, 116.779, 123.68],
-#     std=[1., 1., 1.]
-# )
 
+"""
+Dataloader params
+"""
 img_height = 360
 img_width = 480
-cut_height = 160
+cut_height = 0
+# crop_y = 0
+
+########
+resize_h = 360
+resize_w = 480
+img_height = 360
+img_width = 480
+crop_y = 0
+
+#TODO: remove this duplicay(required by model and visualization while training)
+org_h = 1080
+org_w = 1920
+ori_img_h = 1080
+ori_img_w = 1920
+cut_height = 0
 # ori_img_h = 720
 # ori_img_w = 1280
+#########
 
-# """
-# training params
-# """
-# workers = 12
-# num_classes = 6 + 1
-num_classes = 1 + 1 # binary segmentation
-# # ignore_label = 255
-
-# test_json_file='/home/gautam/e2e/lane_detection/2d_approaches/dataset/tusimple/test_label.json'
 
 """
 2d model params
 """
 featuremap_out_channel = 128
+featuremap_out_stride = 8
+num_classes = 1 + 1 # binary segmentation
 backbone = dict(
     type='ResNetWrapper',
-    resnet_variant='resnet18',
+    resnet_variant='resnet50',
     pretrained=True,
-    replace_stride_with_dilation=[False, True, False],
+    replace_stride_with_dilation=[False, True, True],
     out_conv=True,
     in_channels=[64, 128, 256, -1],
     featuremap_out_channel = 128)
 
-aggregator = dict(type= "SCNN")
+aggregator = dict(type= "RESA",
+                direction=['d', 'u', 'r', 'l'],
+                alpha=2.0,
+                iter=4,
+                conv_stride=9)
 
-heads = dict(type = 'PlainDecoder')
+heads = dict(type = 'BUSD')
+# aggregator = dict(type= "SCNN")
+# heads = dict(type = 'PlainDecoder')
 
 #TODO: move this to CLI args later
-pretrained_2dmodel_path = "/home/ims-robotics/Documents/gautam/E2E_3DLane_AuxNet/nets/checkpoints/RGB_b16_r18_scnn_binary_2dLane_16_June_0.006351555231958628_90.pth"
+pretrained_2dmodel_path = "/home/gjain2s/Documents/Imslab_pc/E2E_3DLane_AuxNet/nets/checkpoints/RESA_res50_sim3d_b8_dice_fulllables_15Aug_/RESA_res50_sim3d_b8_dice_fulllables_15Aug_0.004732295870780945_59.pth"
 lane_pred_dir = "/home/ims-robotics/Documents/gautam/E2E_3DLane_AuxNet/nets/3dlane_detection"
 
 """
 3d model params (anchorless) for Apollo SIM3D dataset
 """
 tile_size = 16
+
+#TODO:: Add it to the CLI args
 # encode_mode ="overlapping"
 # encode_mode = "32x32non"
 encode_mode = "1x1_mix_32X32"
@@ -80,6 +92,8 @@ elif encode_mode == "1x1_mix_32X32":
         encode_config = [(8,1,0,1), (16,1,0,1), (1,16,0,16), (13,1,0,1)]
 
 color_list = [[50,1],[100,2],[150,3],[200,4],[250,5],[255,6]] #(color, lane_class)
+
+#image and ipm_image dimensions
 org_h = 1080
 org_w = 1920
 crop_y = 0
@@ -119,8 +133,9 @@ K = np.array([[2015., 0., 960.],
                        [0., 0., 1.]])
 
 #TODO: change the top view region as per Genlanenet
-# top_view_region = np.array([[-10, 85], [10, 85], [-10, 5], [10, 5]])
+# top_view_region = np.array([[-10, 85], [10, 85], [-10, 5], [10, 5]]) 
 top_view_region = np.array([[-10, 103], [10, 103], [-10, 3], [10, 3]])
+
 batch_norm = True #bev encoder
 embedding_dim = 5
 
@@ -170,7 +185,7 @@ lrs_thresh = 1e-4
 prefetch_factor = 2
 bg_weight = 0.4 #used in the loss function to reduce the importance of one class in tusimple
 
-#TODO: try different combination later as per the gradients and in the end try to balance them
+#NOTE: not in use as we found that we need to train the branches seperately. 
 w_clustering_Loss = 1
 w_classification_Loss = 0.1
 threshold_score = 0.3

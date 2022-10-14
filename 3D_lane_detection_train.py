@@ -642,11 +642,13 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
         optimizer2.zero_grad(set_to_none= True)
         
         with Timing(timings, "2d_forward_pass"):
+            print("++++++++++++++++++++")
+            print("Checking teh shape of the image tensor", batch["input_image"].shape)
             #forward pass
             o = model2d(batch["input_image"].float())
             
             
-            # ######################## To check for the inference from the model while it trains
+            # ######################## To check for the inference from the binary seg model while it trains
     
             # images = []
             # mapping = {(0, 0, 0): 0, (255, 255, 255): 1}
@@ -678,11 +680,12 @@ def train(model2d, model3d, train_loader, val_loader, cfg, epoch, optimizer2, sc
             #     cv2.imwrite(image_save_path, vis_img)
             #     # images.append(vis_img)
                 ######################################################################
-                        
-            print("checking if model 2d correct in training")
-            a = torch.argmax(o, dim =1)
+            
+            #TODO: Remove it later
+            # print("checking if model 2d correct in training")
+            # a = torch.argmax(o, dim =1)
 
-            print(torch.unique(a))            
+            # print(torch.unique(a))            
             o = o.softmax(dim=1)
             o = o/torch.max(torch.max(o, dim=2, keepdim=True)[0], dim=3, keepdim=True)[0] 
             # print("shape of o before max", o.shape)
@@ -828,9 +831,9 @@ if __name__ == "__main__":
     parser.add_argument("--baseline", type=bool, default=False, help="enable baseline")
     parser.add_argument("--pretrained2d", type=bool, default=True, help="enable pretrained 2d lane detection model")
     parser.add_argument("--pretrained3d", type=bool, default=False, help="enable pretrained anchorless 3d lane detection model")
-    parser.add_argument("--data_dir", type=str, default="/home/ims-robotics/Documents/gautam/dataset/Apollo_Sim_3D_Lane_Release", help="data directory")
+    parser.add_argument("--data_dir", type=str, default="/home/gjain2s/Documents/lane_detection_datasets/3d_dataset/Apollo_Sim_3D_Lane_Release", help="data directory")
     parser.add_argument("--data_split", type=str, default="standard", help="data split")
-    parser.add_argument("--path_data_split", type=str, default="/home/ims-robotics/Documents/gautam/dataset/data_splits", help="path to data split")
+    parser.add_argument("--path_data_split", type=str, default="/home/gjain2s/Documents/lane_detection_datasets/3d_dataset/data_splits", help="path to data split")
     parser.add_argument("--e2e",type=bool, default=False, help="enable end-to-end training")
     
     #parsing args
@@ -894,6 +897,7 @@ if __name__ == "__main__":
     print("===> batches in train loader", train_loader_len)
     print("===> batches in val loader", val_loader_len)
     
+
     #load model and weights
     if args.e2e == True: #TODO: make a single forward function for the combined model
         #load 2d model from checkpoint and train the whole pipeline end-to-end

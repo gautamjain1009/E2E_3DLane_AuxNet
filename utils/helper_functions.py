@@ -121,7 +121,7 @@ def HoughLine(edge_image, num_rhos=180, num_thetas=180, t_count=10):
     cos_thetas = np.cos(np.deg2rad(thetas))
     sin_thetas = np.sin(np.deg2rad(thetas))
     #
-    accumulator = np.zeros((len(rhos), len(rhos)))
+    accumulator = np.zeros((len(rhos), len(rhos))) #TODO: change it 
 
     edge_points = np.argwhere(edge_image != 0)
     
@@ -281,8 +281,12 @@ def palpha2alpha(phi_vec):
     return: phi angle in radians
     """
     
-    phi_idx = np.argmax(phi_vec) + 1
-
+    phi_idx = np.argmax(phi_vec)
+    
+    if phi_idx == 0:
+        phi_idx = 1 
+    else: 
+        phi_idx = phi_idx 
     alpha = (2 * np.pi / 10) * phi_idx
     return alpha 
 
@@ -310,9 +314,6 @@ def polar_to_catesian(pred_phi, cam_pitch, cam_height, delta_z_pred, rho_pred):
 
     return cartesian_points #--> List of 3 elements
 
-# def polar_to_cartesian_sample():
-
-#     pass  
 
 def projective_transformation(Matrix, x, y, z):
     """
